@@ -245,7 +245,7 @@ pub trait NormalState {
     fn player2_locs(&self) -> [Point; 2];
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Game<S: GameState> {
     state: S,
     board: Board,
@@ -377,6 +377,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
 
 // Moving
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Move {
     player1_locs: [Point; 2],
     player2_locs: [Point; 2],
@@ -396,6 +397,7 @@ impl NormalState for Move {
 pub struct MoveAction {
     from: Point,
     to: Point,
+    game: Game<Move>
 }
 
 impl MoveAction {
@@ -411,7 +413,7 @@ impl MoveAction {
 impl<'a> Pawn<'a, Move> {
     pub fn can_move(&self, to: Point) -> Option<MoveAction> {
         if self.player == self.game.player && self.pos.distance(to) == 1 && self.game.is_open(to) {
-            Some(MoveAction { from: self.pos, to })
+            Some(MoveAction { from: self.pos, to, game: self.game.clone() })
         } else {
             None
         }
@@ -429,6 +431,10 @@ impl<'a> Pawn<'a, Move> {
 // with minimal differences
 impl Game<Move> {
     pub fn apply(self, action: MoveAction) -> Game<Build> {
+        if action.game != self {
+            panic!("Game {:?} received action {:?} associated with a different game!", self, action);
+        }
+
         let mut state = Build {
             player1_locs: self.state.player1_locs,
             player2_locs: self.state.player2_locs,
@@ -454,7 +460,7 @@ impl Game<Move> {
 
 // Building
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Build {
     player1_locs: [Point; 2],
     player2_locs: [Point; 2],
@@ -472,8 +478,10 @@ impl NormalState for Build {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct BuildAction {
     loc: Point,
+    game: Game<Build>
 }
 
 impl BuildAction {
@@ -488,7 +496,7 @@ impl<'a> Pawn<'a, Build> {
             && self.pos.distance(loc) == 1
             && self.game.is_open(loc)
         {
-            Some(BuildAction { loc })
+            Some(BuildAction { loc, game: self.game.clone() })
         } else {
             None
         }
@@ -512,6 +520,10 @@ impl Game<Build> {
     }
 
     pub fn apply(self, action: BuildAction) -> Game<Move> {
+        if action.game != self {
+            panic!("Game {:?} received action {:?} associated with a different game!", self, action);
+        }
+
         let mut board = self.board;
         board.build(action.loc);
         Game {
@@ -528,12 +540,13 @@ impl Game<Build> {
 // Placement
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct PlaceAction {
+pub struct PlaceAction<T: GameState> {
     pos1: Point,
     pos2: Point,
+    game: Game<T>
 }
 
-impl PlaceAction {
+impl<T: GameState> PlaceAction<T> {
     pub fn pos1(&self) -> Point {
         self.pos1
     }
@@ -543,19 +556,24 @@ impl PlaceAction {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PlaceOne {}
 impl GameState for PlaceOne {}
 
 impl Game<PlaceOne> {
-    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
+    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction<PlaceOne>> {
         if pos1 != pos2 {
-            Some(PlaceAction { pos1, pos2 })
+            Some(PlaceAction { pos1, pos2, game: self.clone() })
         } else {
             None
         }
     }
 
-    pub fn apply(self, placement: PlaceAction) -> Game<PlaceTwo> {
+    pub fn apply(self, placement: PlaceAction<PlaceOne>) -> Game<PlaceTwo> {
+        if placement.game != self {
+            panic!("Game {:?} received action {:?} associated with a different game!", self, placement);
+        }
+
         Game {
             state: PlaceTwo {
                 player1_locs: [placement.pos1, placement.pos2],
@@ -566,13 +584,14 @@ impl Game<PlaceOne> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PlaceTwo {
     player1_locs: [Point; 2],
 }
 impl GameState for PlaceTwo {}
 
 impl Game<PlaceTwo> {
-    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
+    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction<PlaceTwo>> {
         for pos in self.state.player1_locs.iter() {
             if pos1 == *pos || pos2 == *pos {
                 return None;
@@ -580,13 +599,17 @@ impl Game<PlaceTwo> {
         }
 
         if pos1 != pos2 {
-            Some(PlaceAction { pos1, pos2 })
+            Some(PlaceAction { pos1, pos2, game: self.clone() })
         } else {
             None
         }
     }
 
-    pub fn apply(self, placement: PlaceAction) -> Game<Move> {
+    pub fn apply(self, placement: PlaceAction<PlaceTwo>) -> Game<Move> {
+        if placement.game != self {
+            panic!("Game {:?} received action {:?} associated with a different game!", self, placement);
+        }
+
         Game {
             state: Move {
                 player1_locs: self.state.player1_locs,
