@@ -267,13 +267,13 @@ impl<S: GameState + NormalState> Game<S> {
     pub fn player1_pawns(&self) -> [Pawn<S>; 2] {
         // TODO: Use map (currently nightly only)
         let [l1, l2] = self.state.player1_locs();
-        [Pawn{game: self, pos: *l1, player: Player::PlayerOne}, Pawn{game: self, pos: *l2, player: Player::PlayerOne}]
+        [Pawn{game: self, pos: l1, player: Player::PlayerOne}, Pawn{game: self, pos: l2, player: Player::PlayerOne}]
     }
 
     pub fn player2_pawns(&self) -> [Pawn<S>; 2] {
         // TODO: Use map (currently nightly only)
         let [l1, l2] = self.state.player2_locs();
-        [Pawn{game: self, pos: *l1, player: Player::PlayerTwo}, Pawn{game: self, pos: *l2, player: Player::PlayerTwo}]
+        [Pawn{game: self, pos: l1, player: Player::PlayerTwo}, Pawn{game: self, pos: l2, player: Player::PlayerTwo}]
     }
 
     pub fn active_pawns(&self) -> [Pawn<S>; 2] {
@@ -382,9 +382,9 @@ impl Game<Move> {
             player1_locs: self.state.player1_locs,
             player2_locs: self.state.player2_locs
         };
-        let mut locs = match self.player {
-            Player::PlayerOne => &state.player1_locs,
-            Player::PlayerTwo => &state.player2_locs
+        let locs = match self.player {
+            Player::PlayerOne => &mut state.player1_locs,
+            Player::PlayerTwo => &mut state.player2_locs
         };
         let source = locs.iter_mut().find(|loc| **loc == action.from).expect("Invalid MoveAction");
         *source = action.to;
