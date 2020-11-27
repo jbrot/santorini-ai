@@ -399,8 +399,8 @@ impl NormalState for Victory {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ActionResult<T: GameState> {
-    Continue (Game<T>),
-    Victory (Game<Victory>),
+    Continue(Game<T>),
+    Victory(Game<Victory>),
 }
 
 impl<T: GameState> ActionResult<T> {
@@ -516,7 +516,10 @@ impl Game<Move> {
 
         if self.board.level_at(action.to) == CoordLevel::Three {
             ActionResult::Victory(Game {
-                state: Victory { player1_locs: state.player1_locs, player2_locs: state.player2_locs },
+                state: Victory {
+                    player1_locs: state.player1_locs,
+                    player2_locs: state.player2_locs,
+                },
                 board: self.board,
                 player: self.player,
             })
@@ -613,27 +616,32 @@ impl Game<Build> {
             player: self.player.other(),
         };
 
-        if new_game.active_pawns().iter().find_map(|pawn| {
-            pawn.actions().iter().find_map(|action| {
-                match new_game.clone().apply(action.clone()) {
-                    ActionResult::Victory(_) => Some(()),
-                    ActionResult::Continue(g) => {
-                        g.active_pawn().actions().get(0)?;
-                        Some(())
+        if new_game
+            .active_pawns()
+            .iter()
+            .find_map(|pawn| {
+                pawn.actions().iter().find_map(|action| {
+                    match new_game.clone().apply(action.clone()) {
+                        ActionResult::Victory(_) => Some(()),
+                        ActionResult::Continue(g) => {
+                            g.active_pawn().actions().get(0)?;
+                            Some(())
+                        }
                     }
-                }
+                })
             })
-        }).is_some() {
+            .is_some()
+        {
             ActionResult::Continue(new_game)
         } else {
             // New player can't move so the current player wins!
             ActionResult::Victory(Game {
                 state: Victory {
                     player1_locs: new_game.state.player1_locs,
-                    player2_locs: new_game.state.player2_locs
+                    player2_locs: new_game.state.player2_locs,
                 },
                 board: new_game.board,
-                player: self.player
+                player: self.player,
             })
         }
     }
@@ -1410,8 +1418,101 @@ mod game_tests {
         let [_, pawn2] = g.active_pawns();
         let action = pawn2.can_move(pt3).expect("Invalid movement!");
         let g = g.apply(action);
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2  ][3P2][0  ][0  ]
+        // [0  ][0P4][1  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
         if let ActionResult::Victory(g) = g {
             assert_eq!(g.player(), Player::PlayerOne);
+        } else {
+            panic!("Victory not detected!");
+        }
+    }
+
+    #[test]
+    fn victory_stalemate() {
+        let g = new_game();
+        let pt1 = Point::new(1.into(), 1.into());
+        let pt2 = Point::new(1.into(), 2.into());
+        let pt3 = Point::new(0.into(), 2.into());
+        let pt4 = Point::new(2.into(), 2.into());
+
+        let action = g.can_place(pt1, pt2).expect("Invalid placement!");
+        let g = g.apply(action);
+        let action = g.can_place(pt3, pt4).expect("Invalid placement!");
+        let g = g.apply(action);
+
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0P1][0  ][0  ][0  ]
+        // [0P3][0P2][0P4][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt1a = Point::new(0.into(), 0.into());
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let wall_top = Point::new(1.into(), 0.into());
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(wall_top).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0P1][1  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0P3][0P2][0P4][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt4a = Point::new(2.into(), 1.into());
+        let [_, pawn4] = g.active_pawns();
+        let action = pawn4.can_move(pt4a).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn4 = g.active_pawn();
+        let action = pawn4.can_build(wall_top).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0P1][2  ][0  ][0  ][0  ]
+        // [0  ][0  ][0P4][0  ][0  ]
+        // [0P3][0P2][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt2a = Point::new(0.into(), 1.into());
+        let [_, pawn2] = g.active_pawns();
+        let action = pawn2.can_move(pt2a).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn2 = g.active_pawn();
+        let action = pawn2.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0P1][2  ][0  ][0  ][0  ]
+        // [0P2][1  ][0P4][0  ][0  ]
+        // [0P3][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn4] = g.active_pawns();
+        let action = pawn4.can_move(pt2).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn4 = g.active_pawn();
+        let action = pawn4.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0P1][2  ][0  ][0  ][0  ]
+        // [0P2][2  ][0  ][0  ][0  ]
+        // [0P3][0P4][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        if let ActionResult::Victory(g) = g {
+            assert_eq!(g.player(), Player::PlayerTwo);
         } else {
             panic!("Victory not detected!");
         }
