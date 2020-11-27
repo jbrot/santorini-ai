@@ -8,13 +8,16 @@ My goals for this project are:
 
 # Status
 
-- [ ] Create core game datatypes
+- [x] Create core game datatypes
 - [ ] Create visual front end for game
 - [ ] Expand TUI to allow for inputting moves
-- [ ] Implement rules
+- [x] Implement rules
 - [ ] Create a simple heuristic-based AI
 - [ ] Create a MCTS AI
 - [ ] Stretch: Create and train an Alpha Zero AI
+
+So far, I've fully implemented the Santorini game logic and written extensive unit tests.
+Up next is to create the TUI front end.
 
 # License
 
