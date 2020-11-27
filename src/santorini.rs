@@ -801,7 +801,7 @@ mod game_tests {
 
         let pt5 = Point::new(0.into(), 1.into());
         let action = pawn1.can_move(pt5).expect("Invalid move!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
         assert_eq!(Player::PlayerOne, g.player());
 
         let [pawn1, pawn2] = g.player1_pawns();
@@ -819,7 +819,7 @@ mod game_tests {
         assert_eq!(pawn4.pos(), pt4);
 
         let action = pawn1.can_build(pt1).expect("Invalid build!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
         assert_eq!(Player::PlayerTwo, g.player());
 
         let [pawn1, pawn2] = g.player1_pawns();
@@ -985,7 +985,7 @@ mod game_tests {
         let pt1a = Point::new(0.into(), 1.into());
         let [pawn1, _] = g.player1_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid move!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let [pawn1, pawn2] = g.player1_pawns();
         let [pawn3, pawn4] = g.player2_pawns();
@@ -1063,7 +1063,7 @@ mod game_tests {
         let pt1a = Point::new(1.into(), 0.into());
         let [pawn1, _] = g.player1_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let [pawn1, pawn2] = g.player1_pawns();
         let [pawn3, _] = g.player2_pawns();
@@ -1099,11 +1099,11 @@ mod game_tests {
         let pt1a = Point::new(1.into(), 0.into());
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0P1][0  ][0  ][0  ]
         // [0  ][1  ][0P3][0  ][0  ]
@@ -1114,11 +1114,11 @@ mod game_tests {
         let pt3a = Point::new(2.into(), 0.into());
         let [pawn3, _] = g.active_pawns();
         let action = pawn3.can_move(pt3a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn3 = g.active_pawn();
         let action = pawn3.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0P1][0P3][0  ][0  ]
         // [0  ][2  ][0  ][0  ][0  ]
@@ -1131,11 +1131,11 @@ mod game_tests {
 
         let pt1b = Point::new(0.into(), 0.into());
         let action = pawn1.can_move(pt1b).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1a).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0P1][1  ][0P3][0  ][0  ]
         // [0  ][2  ][0  ][0  ][0  ]
@@ -1145,12 +1145,12 @@ mod game_tests {
 
         let [pawn3, _] = g.active_pawns();
         let action = pawn3.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pt1c = Point::new(0.into(), 1.into());
         let pawn3 = g.active_pawn();
         let action = pawn3.can_build(pt1c).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0P1][1P3][0  ][0  ][0  ]
         // [1  ][2  ][0  ][0  ][0  ]
@@ -1160,11 +1160,11 @@ mod game_tests {
 
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1c).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1b).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [1  ][1P3][0  ][0  ][0  ]
         // [1P1][2  ][0  ][0  ][0  ]
@@ -1174,11 +1174,11 @@ mod game_tests {
 
         let [pawn3, _] = g.active_pawns();
         let action = pawn3.can_move(pt1).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn3 = g.active_pawn();
         let action = pawn3.can_build(pt1b).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [2  ][1  ][0  ][0  ][0  ]
         // [1P1][2P3][0  ][0  ][0  ]
@@ -1188,11 +1188,11 @@ mod game_tests {
 
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1b).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [3  ][1P1][0  ][0  ][0  ]
         // [1  ][2P3][0  ][0  ][0  ]
@@ -1234,11 +1234,11 @@ mod game_tests {
         let pt1a = Point::new(1.into(), 0.into());
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0P1][0  ][0  ][0  ]
         // [0  ][1  ][0P3][0  ][0  ]
@@ -1249,11 +1249,11 @@ mod game_tests {
         let pt3a = Point::new(2.into(), 0.into());
         let [pawn3, _] = g.active_pawns();
         let action = pawn3.can_move(pt3a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn3 = g.active_pawn();
         let action = pawn3.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0P1][0P3][0  ][0  ]
         // [0  ][2  ][0  ][0  ][0  ]
@@ -1263,11 +1263,11 @@ mod game_tests {
 
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt3).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         let action = pawn1.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0  ][0P3][0  ][0  ]
         // [0  ][3  ][0P1][0  ][0  ]
@@ -1277,11 +1277,11 @@ mod game_tests {
 
         let [pawn3, _] = g.active_pawns();
         let action = pawn3.can_move(pt1a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn3 = g.active_pawn();
         let action = pawn3.can_build(pt1).expect("Invalid build");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         // [0  ][0P3][0  ][0  ][0  ]
         // [0  ][4  ][0P1][0  ][0  ]
@@ -1291,7 +1291,7 @@ mod game_tests {
 
         let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt3a).expect("Invalid movement!");
-        let g = g.apply(action).unwrap();
+        let g = g.apply(action).expect("Invalid victory!");
 
         let pawn1 = g.active_pawn();
         assert_eq!(None, pawn1.can_build(pt1a));
@@ -1300,5 +1300,120 @@ mod game_tests {
         assert_eq!(None, pawn1.can_build(pt1));
         assert_ne!(None, pawn1.can_build(pt3));
         assert_ne!(None, pawn1.can_build(Point::new(3.into(), 1.into())));
+    }
+
+    #[test]
+    fn victory() {
+        let g = new_game();
+        let pt1 = Point::new(1.into(), 1.into());
+        let pt2 = Point::new(2.into(), 2.into());
+        let pt3 = Point::new(2.into(), 1.into());
+        let pt4 = Point::new(1.into(), 2.into());
+
+        let action = g.can_place(pt1, pt2).expect("Invalid placement!");
+        let g = g.apply(action);
+        let action = g.can_place(pt3, pt4).expect("Invalid placement!");
+        let g = g.apply(action);
+
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt1a = Point::new(1.into(), 0.into());
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0  ][0  ][0  ]
+        // [0  ][1  ][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt3a = Point::new(2.into(), 0.into());
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt3a).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt3).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][1  ][1  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn2] = g.active_pawns();
+        let action = pawn2.can_move(pt3).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn2 = g.active_pawn();
+        let action = pawn2.can_build(pt2).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][1  ][1P2][0  ][0  ]
+        // [0  ][0P4][1  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn4] = g.active_pawns();
+        let action = pawn4.can_move(pt2).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn4 = g.active_pawn();
+        let action = pawn4.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2  ][1P2][0  ][0  ]
+        // [0  ][0  ][1P4][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn2] = g.active_pawns();
+        let action = pawn2.can_move(pt1).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn2 = g.active_pawn();
+        let action = pawn2.can_build(pt3).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2P2][2  ][0  ][0  ]
+        // [0  ][0  ][1P4][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn4] = g.active_pawns();
+        let action = pawn4.can_move(pt4).expect("Invalid movement!");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        let pawn4 = g.active_pawn();
+        let action = pawn4.can_build(pt3).expect("Invalid build");
+        let g = g.apply(action).expect("Invalid victory!");
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2P2][3  ][0  ][0  ]
+        // [0  ][0P4][1  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [_, pawn2] = g.active_pawns();
+        let action = pawn2.can_move(pt3).expect("Invalid movement!");
+        let g = g.apply(action);
+        if let ActionResult::Victory(g) = g {
+            assert_eq!(g.player(), Player::PlayerOne);
+        } else {
+            panic!("Victory not detected!");
+        }
     }
 }
