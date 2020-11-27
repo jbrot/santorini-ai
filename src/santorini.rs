@@ -142,7 +142,7 @@ struct Board {
 impl Board {
     fn new() -> Board {
         Board {
-            grid: [[CoordLevel::Ground; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize]
+            grid: [[CoordLevel::Ground; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize],
         }
     }
 
@@ -150,14 +150,14 @@ impl Board {
         self.grid[usize::from(loc.x())][usize::from(loc.y())]
     }
 
-    fn build(&mut self, loc: Point)  {
+    fn build(&mut self, loc: Point) {
         let c = &mut self.grid[usize::from(loc.x())][usize::from(loc.y())];
         match c {
             CoordLevel::Ground => *c = CoordLevel::One,
             CoordLevel::One => *c = CoordLevel::Two,
             CoordLevel::Two => *c = CoordLevel::Three,
             CoordLevel::Three => *c = CoordLevel::Capped,
-            CoordLevel::Capped => panic!["Invalid build action!"]
+            CoordLevel::Capped => panic!["Invalid build action!"],
         }
     }
 }
@@ -169,11 +169,26 @@ mod board_tests {
     #[test]
     fn level_at() {
         let b = Board::new();
-        assert_eq!(b.level_at(Point::new(0.into(), 0.into())), CoordLevel::Ground);
-        assert_eq!(b.level_at(Point::new(4.into(), 0.into())), CoordLevel::Ground);
-        assert_eq!(b.level_at(Point::new(0.into(), 4.into())), CoordLevel::Ground);
-        assert_eq!(b.level_at(Point::new(4.into(), 4.into())), CoordLevel::Ground);
-        assert_eq!(b.level_at(Point::new(2.into(), 2.into())), CoordLevel::Ground);
+        assert_eq!(
+            b.level_at(Point::new(0.into(), 0.into())),
+            CoordLevel::Ground
+        );
+        assert_eq!(
+            b.level_at(Point::new(4.into(), 0.into())),
+            CoordLevel::Ground
+        );
+        assert_eq!(
+            b.level_at(Point::new(0.into(), 4.into())),
+            CoordLevel::Ground
+        );
+        assert_eq!(
+            b.level_at(Point::new(4.into(), 4.into())),
+            CoordLevel::Ground
+        );
+        assert_eq!(
+            b.level_at(Point::new(2.into(), 2.into())),
+            CoordLevel::Ground
+        );
     }
 
     #[test]
@@ -210,14 +225,14 @@ mod board_tests {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Player {
     PlayerOne,
-    PlayerTwo
+    PlayerTwo,
 }
 
 impl Player {
-    pub fn other(&self) -> Player  {
+    pub fn other(&self) -> Player {
         match self {
             Player::PlayerOne => Player::PlayerTwo,
-            Player::PlayerTwo => Player::PlayerOne
+            Player::PlayerTwo => Player::PlayerOne,
         }
     }
 }
@@ -232,7 +247,7 @@ pub trait NormalState {
 pub struct Game<S: GameState> {
     state: S,
     board: Board,
-    player: Player
+    player: Player,
 }
 
 impl<S: GameState + NormalState> Game<S> {
@@ -240,24 +255,24 @@ impl<S: GameState + NormalState> Game<S> {
         Game {
             state: PlaceOne {},
             board: Board::new(),
-            player: Player::PlayerOne
+            player: Player::PlayerOne,
         }
     }
 
     pub fn is_open(&self, loc: Point) -> bool {
         if self.board.level_at(loc) == CoordLevel::Capped {
-            return false
+            return false;
         }
 
         for pos in self.state.player1_locs().iter() {
             if *pos == loc {
-                return false
+                return false;
             }
         }
 
         for pos in self.state.player2_locs().iter() {
             if *pos == loc {
-                return false
+                return false;
             }
         }
 
@@ -267,26 +282,48 @@ impl<S: GameState + NormalState> Game<S> {
     pub fn player1_pawns(&self) -> [Pawn<S>; 2] {
         // TODO: Use map (currently nightly only)
         let [l1, l2] = self.state.player1_locs();
-        [Pawn{game: self, pos: l1, player: Player::PlayerOne}, Pawn{game: self, pos: l2, player: Player::PlayerOne}]
+        [
+            Pawn {
+                game: self,
+                pos: l1,
+                player: Player::PlayerOne,
+            },
+            Pawn {
+                game: self,
+                pos: l2,
+                player: Player::PlayerOne,
+            },
+        ]
     }
 
     pub fn player2_pawns(&self) -> [Pawn<S>; 2] {
         // TODO: Use map (currently nightly only)
         let [l1, l2] = self.state.player2_locs();
-        [Pawn{game: self, pos: l1, player: Player::PlayerTwo}, Pawn{game: self, pos: l2, player: Player::PlayerTwo}]
+        [
+            Pawn {
+                game: self,
+                pos: l1,
+                player: Player::PlayerTwo,
+            },
+            Pawn {
+                game: self,
+                pos: l2,
+                player: Player::PlayerTwo,
+            },
+        ]
     }
 
     pub fn active_pawns(&self) -> [Pawn<S>; 2] {
         match self.player {
             PlayerOne => self.player1_pawns(),
-            PlayerTwo => self.player2_pawns()
+            PlayerTwo => self.player2_pawns(),
         }
     }
 
     pub fn inactive_pawns(&self) -> [Pawn<S>; 2] {
         match self.player {
             PlayerOne => self.player2_pawns(),
-            PlayerTwo => self.player1_pawns()
+            PlayerTwo => self.player1_pawns(),
         }
     }
 }
@@ -294,7 +331,7 @@ impl<S: GameState + NormalState> Game<S> {
 pub struct Pawn<'a, S: GameState> {
     game: &'a Game<S>,
     pos: Point,
-    player: Player
+    player: Player,
 }
 
 impl<'a, S: GameState> Pawn<'a, S> {
@@ -355,7 +392,7 @@ impl MoveAction {
     pub fn to(&self) -> Point {
         self.to
     }
-} 
+}
 
 impl<'a> Pawn<'a, Move> {
     pub fn can_move(&self, to: Point) -> Option<MoveAction> {
@@ -380,19 +417,22 @@ impl Game<Move> {
     pub fn apply(self, action: MoveAction) -> Game<Build> {
         let mut state = Build {
             player1_locs: self.state.player1_locs,
-            player2_locs: self.state.player2_locs
+            player2_locs: self.state.player2_locs,
         };
         let locs = match self.player {
             Player::PlayerOne => &mut state.player1_locs,
-            Player::PlayerTwo => &mut state.player2_locs
+            Player::PlayerTwo => &mut state.player2_locs,
         };
-        let source = locs.iter_mut().find(|loc| **loc == action.from).expect("Invalid MoveAction");
+        let source = locs
+            .iter_mut()
+            .find(|loc| **loc == action.from)
+            .expect("Invalid MoveAction");
         *source = action.to;
 
         Game {
             state,
             board: self.board,
-            player: self.player 
+            player: self.player,
         }
     }
 }
@@ -451,7 +491,7 @@ impl Game<Build> {
                 player2_locs: self.state.player2_locs,
             },
             board,
-            player: self.player.other()
+            player: self.player.other(),
         }
     }
 }
@@ -460,7 +500,7 @@ impl Game<Build> {
 
 pub struct PlaceAction {
     pos1: Point,
-    pos2: Point
+    pos2: Point,
 }
 
 impl PlaceAction {
@@ -476,7 +516,6 @@ impl PlaceAction {
 pub struct PlaceOne {}
 impl GameState for PlaceOne {}
 
-
 impl Game<PlaceOne> {
     pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
         if pos1 != pos2 {
@@ -488,13 +527,14 @@ impl Game<PlaceOne> {
 
     pub fn apply(self, placement: PlaceAction) -> Game<PlaceTwo> {
         Game {
-            state: PlaceTwo { player1_locs: [placement.pos1, placement.pos2] },
+            state: PlaceTwo {
+                player1_locs: [placement.pos1, placement.pos2],
+            },
             board: self.board,
-            player: Player::PlayerTwo
+            player: Player::PlayerTwo,
         }
     }
 }
-
 
 pub struct PlaceTwo {
     player1_locs: [Point; 2],
@@ -505,7 +545,7 @@ impl Game<PlaceTwo> {
     pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
         for pos in self.state.player1_locs.iter() {
             if pos1 == *pos || pos2 == *pos {
-                return None
+                return None;
             }
         }
 
@@ -523,7 +563,7 @@ impl Game<PlaceTwo> {
                 player2_locs: [placement.pos1, placement.pos2],
             },
             board: self.board,
-            player: Player::PlayerOne
+            player: Player::PlayerOne,
         }
     }
 }
