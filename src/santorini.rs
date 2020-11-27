@@ -397,7 +397,7 @@ impl NormalState for Move {
 pub struct MoveAction {
     from: Point,
     to: Point,
-    game: Game<Move>
+    game: Game<Move>,
 }
 
 impl MoveAction {
@@ -412,11 +412,28 @@ impl MoveAction {
 
 impl<'a> Pawn<'a, Move> {
     pub fn can_move(&self, to: Point) -> Option<MoveAction> {
-        if self.player == self.game.player && self.pos.distance(to) == 1 && self.game.is_open(to) {
-            Some(MoveAction { from: self.pos, to, game: self.game.clone() })
-        } else {
-            None
+        if self.player != self.game.player {
+            return None;
         }
+
+        if self.pos.distance(to) != 1 {
+            return None;
+        }
+
+        let board = &self.game.board;
+        if board.level_at(to).height() - board.level_at(self.pos).height() > 1 {
+            return None;
+        }
+
+        if !self.game.is_open(to) {
+            return None;
+        }
+
+        Some(MoveAction {
+            from: self.pos,
+            to,
+            game: self.game.clone(),
+        })
     }
 
     pub fn actions(&self) -> Vec<MoveAction> {
@@ -432,7 +449,10 @@ impl<'a> Pawn<'a, Move> {
 impl Game<Move> {
     pub fn apply(self, action: MoveAction) -> Game<Build> {
         if action.game != self {
-            panic!("Game {:?} received action {:?} associated with a different game!", self, action);
+            panic!(
+                "Game {:?} received action {:?} associated with a different game!",
+                self, action
+            );
         }
 
         let mut state = Build {
@@ -481,7 +501,7 @@ impl NormalState for Build {
 #[derive(Debug, PartialEq, Eq)]
 pub struct BuildAction {
     loc: Point,
-    game: Game<Build>
+    game: Game<Build>,
 }
 
 impl BuildAction {
@@ -496,7 +516,10 @@ impl<'a> Pawn<'a, Build> {
             && self.pos.distance(loc) == 1
             && self.game.is_open(loc)
         {
-            Some(BuildAction { loc, game: self.game.clone() })
+            Some(BuildAction {
+                loc,
+                game: self.game.clone(),
+            })
         } else {
             None
         }
@@ -521,7 +544,10 @@ impl Game<Build> {
 
     pub fn apply(self, action: BuildAction) -> Game<Move> {
         if action.game != self {
-            panic!("Game {:?} received action {:?} associated with a different game!", self, action);
+            panic!(
+                "Game {:?} received action {:?} associated with a different game!",
+                self, action
+            );
         }
 
         let mut board = self.board;
@@ -543,7 +569,7 @@ impl Game<Build> {
 pub struct PlaceAction<T: GameState> {
     pos1: Point,
     pos2: Point,
-    game: Game<T>
+    game: Game<T>,
 }
 
 impl<T: GameState> PlaceAction<T> {
@@ -563,7 +589,11 @@ impl GameState for PlaceOne {}
 impl Game<PlaceOne> {
     pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction<PlaceOne>> {
         if pos1 != pos2 {
-            Some(PlaceAction { pos1, pos2, game: self.clone() })
+            Some(PlaceAction {
+                pos1,
+                pos2,
+                game: self.clone(),
+            })
         } else {
             None
         }
@@ -571,7 +601,10 @@ impl Game<PlaceOne> {
 
     pub fn apply(self, placement: PlaceAction<PlaceOne>) -> Game<PlaceTwo> {
         if placement.game != self {
-            panic!("Game {:?} received action {:?} associated with a different game!", self, placement);
+            panic!(
+                "Game {:?} received action {:?} associated with a different game!",
+                self, placement
+            );
         }
 
         Game {
@@ -599,7 +632,11 @@ impl Game<PlaceTwo> {
         }
 
         if pos1 != pos2 {
-            Some(PlaceAction { pos1, pos2, game: self.clone() })
+            Some(PlaceAction {
+                pos1,
+                pos2,
+                game: self.clone(),
+            })
         } else {
             None
         }
@@ -607,7 +644,10 @@ impl Game<PlaceTwo> {
 
     pub fn apply(self, placement: PlaceAction<PlaceTwo>) -> Game<Move> {
         if placement.game != self {
-            panic!("Game {:?} received action {:?} associated with a different game!", self, placement);
+            panic!(
+                "Game {:?} received action {:?} associated with a different game!",
+                self, placement
+            );
         }
 
         Game {
@@ -822,17 +862,235 @@ mod game_tests {
 
         assert_eq!(pawn1, g.active_pawn());
 
-        //let [pawn3, _] = g.player2_pawns();
+        assert_eq!(None, pawn1.can_build(pt3));
+        assert_ne!(None, pawn1.can_build(pt1));
 
-        //assert_eq!(None, pawn1.can_move(pt2));
-        //assert_eq!(None, pawn1.can_move(pt3));
-        //assert_eq!(None, pawn1.can_move(pt4));
-        //assert_eq!(None, pawn1.can_move(Point::new(0.into(), 3.into())));
-        //assert_ne!(None, pawn1.can_move(Point::new(0.into(), 2.into())));
+        assert_eq!(None, pawn2.can_build(pt1));
+        assert_eq!(None, pawn3.can_build(pt1));
+    }
 
-        //assert_ne!(None, pawn2.can_move(Point::new(2.into(), 3.into())));
-        //assert_eq!(None, pawn2.can_move(pt3));
+    #[test]
+    fn can_move_height() {
+        let g = new_game();
+        let pt1 = Point::new(1.into(), 1.into());
+        let pt2 = Point::new(2.into(), 2.into());
+        let pt3 = Point::new(2.into(), 1.into());
+        let pt4 = Point::new(1.into(), 2.into());
 
-        //assert_eq!(None, pawn3.can_move(Point::new(3.into(), 1.into())));
+        let action = g.can_place(pt1, pt2).expect("Invalid placement!");
+        let g = g.apply(action);
+        let action = g.can_place(pt3, pt4).expect("Invalid placement!");
+        let g = g.apply(action);
+
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt1a = Point::new(1.into(), 0.into());
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0P1][0  ][0  ][0  ]
+        // [0  ][1  ][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt3a = Point::new(2.into(), 0.into());
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt3a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2  ][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn1, _] = g.active_pawns();
+        assert_eq!(None, pawn1.can_move(pt1));
+
+        let pt1b = Point::new(0.into(), 0.into());
+        let action = pawn1.can_move(pt1b).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1a).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0P1][1  ][0P3][0  ][0  ]
+        // [0  ][2  ][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pt1c = Point::new(0.into(), 1.into());
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt1c).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0P1][1P3][0  ][0  ][0  ]
+        // [1  ][2  ][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1c).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1b).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [1  ][1P3][0  ][0  ][0  ]
+        // [1P1][2  ][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt1).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt1b).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [2  ][1  ][0  ][0  ][0  ]
+        // [1P1][2P3][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1b).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [3  ][1P1][0  ][0  ][0  ]
+        // [1  ][2P3][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn3, _] = g.active_pawns();
+        assert_ne!(None, pawn3.can_move(pt1b));
+        assert_eq!(None, pawn3.can_move(pt1a));
+        assert_ne!(None, pawn3.can_move(pt3a));
+        assert_ne!(None, pawn3.can_move(pt1c));
+        assert_eq!(None, pawn3.can_move(pt1));
+        assert_ne!(None, pawn3.can_move(pt3));
+        assert_ne!(None, pawn3.can_move(Point::new(0.into(), 2.into())));
+        assert_eq!(None, pawn3.can_move(pt4));
+        assert_eq!(None, pawn3.can_move(pt2));
+    }
+
+    #[test]
+    fn can_build_capped() {
+        let g = new_game();
+        let pt1 = Point::new(1.into(), 1.into());
+        let pt2 = Point::new(2.into(), 2.into());
+        let pt3 = Point::new(2.into(), 1.into());
+        let pt4 = Point::new(1.into(), 2.into());
+
+        let action = g.can_place(pt1, pt2).expect("Invalid placement!");
+        let g = g.apply(action);
+        let action = g.can_place(pt3, pt4).expect("Invalid placement!");
+        let g = g.apply(action);
+
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt1a = Point::new(1.into(), 0.into());
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0P1][0  ][0  ][0  ]
+        // [0  ][1  ][0P3][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let pt3a = Point::new(2.into(), 0.into());
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt3a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0P1][0P3][0  ][0  ]
+        // [0  ][2  ][0  ][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt3).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        let action = pawn1.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0  ][0P3][0  ][0  ]
+        // [0  ][3  ][0P1][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn3, _] = g.active_pawns();
+        let action = pawn3.can_move(pt1a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn3 = g.active_pawn();
+        let action = pawn3.can_build(pt1).expect("Invalid build");
+        let g = g.apply(action);
+
+        // [0  ][0P3][0  ][0  ][0  ]
+        // [0  ][4  ][0P1][0  ][0  ]
+        // [0  ][0P4][0P2][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+        // [0  ][0  ][0  ][0  ][0  ]
+
+        let [pawn1, _] = g.active_pawns();
+        let action = pawn1.can_move(pt3a).expect("Invalid movement!");
+        let g = g.apply(action);
+
+        let pawn1 = g.active_pawn();
+        assert_eq!(None, pawn1.can_build(pt1a));
+        assert_eq!(None, pawn1.can_build(pt3a));
+        assert_ne!(None, pawn1.can_build(Point::new(3.into(), 0.into())));
+        assert_eq!(None, pawn1.can_build(pt1));
+        assert_ne!(None, pawn1.can_build(pt3));
+        assert_ne!(None, pawn1.can_build(Point::new(3.into(), 1.into())));
     }
 }
