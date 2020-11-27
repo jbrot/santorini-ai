@@ -1,9 +1,8 @@
 use derive_more::{Add, Display, From};
 
-use std::marker::PhantomData;
 use std::ops::{Deref, Sub};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Display, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Display, From)]
 pub struct Coord(pub i8);
 
 impl Deref for Coord {
@@ -19,7 +18,7 @@ impl From<Coord> for usize {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct Point {
     x: Coord,
     y: Coord,
@@ -69,12 +68,15 @@ impl Point {
 }
 
 #[cfg(test)]
-mod tests {
+mod point_tests {
     use super::*;
 
     #[test]
     fn valid_point() {
-        Point::new(Coord::from(3), Coord::from(4));
+        Point::new(Coord::from(0), Coord::from(0));
+        Point::new(Coord::from(4), Coord::from(4));
+        Point::new_(Coord::from(3), Coord::from(1)).unwrap();
+        Point::new_(Coord::from(2), Coord::from(0)).unwrap();
     }
 
     #[test]
@@ -84,13 +86,27 @@ mod tests {
     }
 
     #[test]
+    fn negative_point_() {
+        assert_eq!(Point::new_(Coord::from(0), Coord::from(-1)), None);
+        assert_eq!(Point::new_(Coord::from(-1), Coord::from(0)), None);
+        assert_eq!(Point::new_(Coord::from(-4), Coord::from(-8)), None);
+    }
+
+    #[test]
     #[should_panic]
     fn large_point() {
         Point::new(Coord::from(5), Coord::from(2));
     }
+
+    #[test]
+    fn large_point_() {
+        assert_eq!(Point::new_(Coord::from(5), Coord::from(4)), None);
+        assert_eq!(Point::new_(Coord::from(4), Coord::from(5)), None);
+        assert_eq!(Point::new_(Coord::from(7), Coord::from(9)), None);
+    }
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum CoordLevel {
     Ground,
     One,
@@ -102,11 +118,11 @@ pub enum CoordLevel {
 impl CoordLevel {
     fn height(self) -> i8 {
         match self {
-            Ground => 0,
-            One => 1,
-            Two => 2,
-            Three => 3,
-            Capped => 4,
+            CoordLevel::Ground => 0,
+            CoordLevel::One => 1,
+            CoordLevel::Two => 2,
+            CoordLevel::Three => 3,
+            CoordLevel::Capped => 4,
         }
     }
 }
@@ -124,59 +140,164 @@ struct Board {
 }
 
 impl Board {
-    fn level_at(&self, loc: Point) -> CoordLevel {
+    fn new() -> Board {
+        Board {
+            grid: [[CoordLevel::Ground; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize]
+        }
+    }
+
+    pub fn level_at(&self, loc: Point) -> CoordLevel {
         self.grid[usize::from(loc.x())][usize::from(loc.y())]
     }
-}
 
-pub trait Player {}
-
-pub struct PlayerOne {}
-impl Player for PlayerOne {}
-
-pub struct PlayerTwo {}
-impl Player for PlayerTwo {}
-
-pub trait GameState<T: Player> {}
-pub struct Place<T: Player> {
-    phantom: PhantomData<T>,
-}
-impl<T: Player> GameState<T> for Place<T> {}
-pub struct Move<T: Player> {
-    phantom: PhantomData<T>,
-}
-impl<T: Player> GameState<T> for Move<T> {}
-pub struct Build<T: Player> {
-    phantom: PhantomData<T>,
-}
-impl<T: Player> GameState<T> for Build<T> {}
-
-pub struct Game<P: Player, S: GameState<P>> {
-    state: S,
-    board: Board,
-    phantom: PhantomData<P>,
-}
-
-impl<P: Player, S: GameState<P>> Game<P, S> {
-    pub fn is_open(&self, loc: Point) -> bool {
-        // TODO: Check player positions
-        self.board.level_at(loc) != CoordLevel::Capped
+    fn build(&mut self, loc: Point)  {
+        let c = &mut self.grid[usize::from(loc.x())][usize::from(loc.y())];
+        match c {
+            CoordLevel::Ground => *c = CoordLevel::One,
+            CoordLevel::One => *c = CoordLevel::Two,
+            CoordLevel::Two => *c = CoordLevel::Three,
+            CoordLevel::Three => *c = CoordLevel::Capped,
+            CoordLevel::Capped => panic!["Invalid build action!"]
+        }
     }
 }
 
-pub struct Pawn<'a, P, C, S>
-where
-    P: Player,
-    C: Player,
-    S: GameState<C>,
-{
-    game: &'a Game<C, S>,
-    pos: Point,
+#[cfg(test)]
+mod board_tests {
+    use super::*;
 
-    phantom: PhantomData<P>,
+    #[test]
+    fn level_at() {
+        let b = Board::new();
+        assert_eq!(b.level_at(Point::new(0.into(), 0.into())), CoordLevel::Ground);
+        assert_eq!(b.level_at(Point::new(4.into(), 0.into())), CoordLevel::Ground);
+        assert_eq!(b.level_at(Point::new(0.into(), 4.into())), CoordLevel::Ground);
+        assert_eq!(b.level_at(Point::new(4.into(), 4.into())), CoordLevel::Ground);
+        assert_eq!(b.level_at(Point::new(2.into(), 2.into())), CoordLevel::Ground);
+    }
+
+    #[test]
+    fn build() {
+        let pt = Point::new(2.into(), 2.into());
+        let mut b = Board::new();
+
+        assert_eq!(b.level_at(pt), CoordLevel::Ground);
+        b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::One);
+        b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Two);
+        b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Three);
+        b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Capped);
+    }
+
+    #[test]
+    #[should_panic]
+    fn build_over() {
+        let pt = Point::new(2.into(), 2.into());
+        let mut b = Board::new();
+
+        b.build(pt);
+        b.build(pt);
+        b.build(pt);
+        b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Capped);
+        b.build(pt);
+    }
 }
 
-impl<'a, P: Player, C: Player, S: GameState<C>> Pawn<'a, P, C, S> {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Player {
+    PlayerOne,
+    PlayerTwo
+}
+
+impl Player {
+    pub fn other(&self) -> Player  {
+        match self {
+            Player::PlayerOne => Player::PlayerTwo,
+            Player::PlayerTwo => Player::PlayerOne
+        }
+    }
+}
+
+pub trait GameState {}
+
+pub trait NormalState {
+    fn player1_locs(&self) -> [Point; 2];
+    fn player2_locs(&self) -> [Point; 2];
+}
+
+pub struct Game<S: GameState> {
+    state: S,
+    board: Board,
+    player: Player
+}
+
+impl<S: GameState + NormalState> Game<S> {
+    pub fn new() -> Game<PlaceOne> {
+        Game {
+            state: PlaceOne {},
+            board: Board::new(),
+            player: Player::PlayerOne
+        }
+    }
+
+    pub fn is_open(&self, loc: Point) -> bool {
+        if self.board.level_at(loc) == CoordLevel::Capped {
+            return false
+        }
+
+        for pos in self.state.player1_locs().iter() {
+            if *pos == loc {
+                return false
+            }
+        }
+
+        for pos in self.state.player2_locs().iter() {
+            if *pos == loc {
+                return false
+            }
+        }
+
+        true
+    }
+
+    pub fn player1_pawns(&self) -> [Pawn<S>; 2] {
+        // TODO: Use map (currently nightly only)
+        let [l1, l2] = self.state.player1_locs();
+        [Pawn{game: self, pos: *l1, player: Player::PlayerOne}, Pawn{game: self, pos: *l2, player: Player::PlayerOne}]
+    }
+
+    pub fn player2_pawns(&self) -> [Pawn<S>; 2] {
+        // TODO: Use map (currently nightly only)
+        let [l1, l2] = self.state.player2_locs();
+        [Pawn{game: self, pos: *l1, player: Player::PlayerTwo}, Pawn{game: self, pos: *l2, player: Player::PlayerTwo}]
+    }
+
+    pub fn active_pawns(&self) -> [Pawn<S>; 2] {
+        match self.player {
+            PlayerOne => self.player1_pawns(),
+            PlayerTwo => self.player2_pawns()
+        }
+    }
+
+    pub fn inactive_pawns(&self) -> [Pawn<S>; 2] {
+        match self.player {
+            PlayerOne => self.player2_pawns(),
+            PlayerTwo => self.player1_pawns()
+        }
+    }
+}
+
+pub struct Pawn<'a, S: GameState> {
+    game: &'a Game<S>,
+    pos: Point,
+    player: Player
+}
+
+impl<'a, S: GameState> Pawn<'a, S> {
     pub fn pos(&self) -> Point {
         self.pos
     }
@@ -204,6 +325,23 @@ impl<'a, P: Player, C: Player, S: GameState<C>> Pawn<'a, P, C, S> {
     }
 }
 
+// Moving
+
+pub struct Move {
+    player1_locs: [Point; 2],
+    player2_locs: [Point; 2],
+}
+impl GameState for Move {}
+impl NormalState for Move {
+    fn player1_locs(&self) -> [Point; 2] {
+        self.player1_locs
+    }
+
+    fn player2_locs(&self) -> [Point; 2] {
+        self.player1_locs
+    }
+}
+
 pub struct MoveAction {
     from: Point,
     to: Point,
@@ -219,7 +357,7 @@ impl MoveAction {
     }
 } 
 
-impl<'a, P: Player> Pawn<'a, P, P, Move<P>> {
+impl<'a> Pawn<'a, Move> {
     pub fn can_move(&self, to: Point) -> Option<MoveAction> {
         if self.pos.distance(to) == 1 && self.game.is_open(to) {
             Some(MoveAction { from: self.pos, to })
@@ -236,6 +374,46 @@ impl<'a, P: Player> Pawn<'a, P, P, Move<P>> {
     }
 }
 
+// We use a macro because we need to write this function for P1 and P2
+// with minimal differences
+impl Game<Move> {
+    pub fn apply(self, action: MoveAction) -> Game<Build> {
+        let mut state = Build {
+            player1_locs: self.state.player1_locs,
+            player2_locs: self.state.player2_locs
+        };
+        let mut locs = match self.player {
+            Player::PlayerOne => &state.player1_locs,
+            Player::PlayerTwo => &state.player2_locs
+        };
+        let source = locs.iter_mut().find(|loc| **loc == action.from).expect("Invalid MoveAction");
+        *source = action.to;
+
+        Game {
+            state,
+            board: self.board,
+            player: self.player 
+        }
+    }
+}
+
+// Building
+
+pub struct Build {
+    player1_locs: [Point; 2],
+    player2_locs: [Point; 2],
+}
+impl GameState for Build {}
+impl NormalState for Build {
+    fn player1_locs(&self) -> [Point; 2] {
+        self.player1_locs
+    }
+
+    fn player2_locs(&self) -> [Point; 2] {
+        self.player1_locs
+    }
+}
+
 pub struct BuildAction {
     loc: Point,
 }
@@ -246,7 +424,7 @@ impl BuildAction {
     }
 }
 
-impl<'a, P: Player> Pawn<'a, P, P, Place<P>> {
+impl<'a> Pawn<'a, Build> {
     pub fn can_build(&self, loc: Point) -> Option<BuildAction> {
         if self.pos.distance(loc) == 1 && self.game.is_open(loc) {
             Some(BuildAction { loc })
@@ -263,17 +441,89 @@ impl<'a, P: Player> Pawn<'a, P, P, Place<P>> {
     }
 }
 
-//struct Player<'a> {
-//    loc: Point,
-//    board: &'a Board
-//}
-//
-//impl<'a> Player<'a> {
-//    fn can_move(&self, loc: Point) -> bool {
-//        self.loc.distance(loc) == 1 && self.board.is_open(loc) && self.board.level_at(loc) - self.board.level_at(self.loc) <= 1
-//    }
-//
-//    fn can_build(&self, loc: Point) -> bool {
-//        self.loc.distance(loc) == 1 && self.board.is_open(loc)
-//    }
-//}
+impl Game<Build> {
+    pub fn apply(self, action: BuildAction) -> Game<Move> {
+        let mut board = self.board;
+        board.build(action.loc);
+        Game {
+            state: Move {
+                player1_locs: self.state.player1_locs,
+                player2_locs: self.state.player2_locs,
+            },
+            board,
+            player: self.player.other()
+        }
+    }
+}
+
+// Placement
+
+pub struct PlaceAction {
+    pos1: Point,
+    pos2: Point
+}
+
+impl PlaceAction {
+    pub fn pos1(&self) -> Point {
+        self.pos1
+    }
+
+    pub fn pos2(&self) -> Point {
+        self.pos2
+    }
+}
+
+pub struct PlaceOne {}
+impl GameState for PlaceOne {}
+
+
+impl Game<PlaceOne> {
+    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
+        if pos1 != pos2 {
+            Some(PlaceAction { pos1, pos2 })
+        } else {
+            None
+        }
+    }
+
+    pub fn apply(self, placement: PlaceAction) -> Game<PlaceTwo> {
+        Game {
+            state: PlaceTwo { player1_locs: [placement.pos1, placement.pos2] },
+            board: self.board,
+            player: Player::PlayerTwo
+        }
+    }
+}
+
+
+pub struct PlaceTwo {
+    player1_locs: [Point; 2],
+}
+impl GameState for PlaceTwo {}
+
+impl Game<PlaceTwo> {
+    pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction> {
+        for pos in self.state.player1_locs.iter() {
+            if pos1 == *pos || pos2 == *pos {
+                return None
+            }
+        }
+
+        if pos1 == pos2 {
+            Some(PlaceAction { pos1, pos2 })
+        } else {
+            None
+        }
+    }
+
+    pub fn apply(self, placement: PlaceAction) -> Game<Move> {
+        Game {
+            state: Move {
+                player1_locs: self.state.player1_locs,
+                player2_locs: [placement.pos1, placement.pos2],
+            },
+            board: self.board,
+            player: Player::PlayerOne
+        }
+    }
+}
