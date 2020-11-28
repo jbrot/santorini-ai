@@ -36,11 +36,16 @@ impl Point {
         self.y
     }
 
-    /// Compute the L0 (taxicab) distance between the points
+    /// Compute the L\infty (supremum) distance between the points
     pub fn distance(&self, other: Point) -> i8 {
         let dx = (other.x().0 - self.x().0).abs();
         let dy = (other.y().0 - self.y().0).abs();
         i8::max(dx, dy)
+    }
+
+    /// Compute the L0 (taxicab) distance between the points
+    pub fn taxicab(&self, other: Point) -> i8 {
+        (other.x().0 - self.x().0).abs() + (other.y().0 - self.y().0).abs()
     }
 
     pub fn new(x: Coord, y: Coord) -> Point {
@@ -340,7 +345,7 @@ impl<S: GameState + NormalState> Game<S> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Pawn<'a, S: GameState> {
     game: &'a Game<S>,
     pos: Point,
