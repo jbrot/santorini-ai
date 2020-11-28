@@ -24,8 +24,8 @@ pub struct Point {
     y: Coord,
 }
 
-const BOARD_WIDTH: Coord = Coord(5);
-const BOARD_HEIGHT: Coord = Coord(5);
+pub const BOARD_WIDTH: Coord = Coord(5);
+pub const BOARD_HEIGHT: Coord = Coord(5);
 
 impl Point {
     pub fn x(&self) -> Coord {
@@ -116,7 +116,7 @@ pub enum CoordLevel {
 }
 
 impl CoordLevel {
-    fn height(self) -> i8 {
+    pub fn height(self) -> i8 {
         match self {
             CoordLevel::Ground => 0,
             CoordLevel::One => 1,
@@ -136,7 +136,7 @@ impl Sub for CoordLevel {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct Board {
+pub struct Board {
     pub grid: [[CoordLevel; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize],
 }
 
