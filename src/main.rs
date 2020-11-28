@@ -5,10 +5,11 @@ use termion::raw::{IntoRawMode, RawTerminal};
 use thiserror::Error;
 use tui::backend::TermionBackend;
 use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout, Rect};
+use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
-use tui::widgets::{Block, Borders, Widget};
-use tui::Terminal;
+use tui::text::{Span, Spans};
+use tui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
+use tui::{Frame, Terminal};
 
 mod santorini;
 use santorini::{
@@ -77,6 +78,12 @@ const PLAYER_ONE_STYLE: Style = Style {
     fg: Some(Color::White),
     ..DEFAULT_STYLE
 };
+const PLAYER_ONE_TEXT_STYLE: Style = Style {
+    bg: None,
+    fg: Some(Color::Indexed(21)),
+    add_modifier: Modifier::BOLD,
+    ..DEFAULT_STYLE
+};
 const PLAYER_ONE_CURSOR_STYLE: Style = Style {
     bg: Some(Color::Indexed(45)),
     fg: Some(Color::Black),
@@ -91,6 +98,12 @@ const PLAYER_ONE_HIGHLIGHT_STYLE: Style = Style {
 const PLAYER_TWO_STYLE: Style = Style {
     bg: Some(Color::Indexed(160)),
     fg: Some(Color::White),
+    ..DEFAULT_STYLE
+};
+const PLAYER_TWO_TEXT_STYLE: Style = Style {
+    bg: None,
+    fg: Some(Color::Indexed(160)),
+    add_modifier: Modifier::BOLD,
     ..DEFAULT_STYLE
 };
 const PLAYER_TWO_CURSOR_STYLE: Style = Style {
@@ -186,7 +199,8 @@ impl Widget for BoardWidget {
     }
 }
 
-type Term = Terminal<TermionBackend<MouseTerminal<RawTerminal<io::Stdout>>>>;
+type Back = TermionBackend<MouseTerminal<RawTerminal<io::Stdout>>>;
+type Term = Terminal<Back>;
 
 #[derive(Error, Debug)]
 enum UpdateError {
@@ -207,19 +221,25 @@ struct App<T: GameState> {
 }
 
 impl<T: GameState> App<T> {
+    fn do_draw(&self, frame: &mut Frame<Back>, widget: BoardWidget) -> Rect {
+        let border = Block::default().title("Santorini").borders(Borders::ALL);
+        frame.render_widget(border, frame.size());
+
+        let segments = Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints([Constraint::Min(15), Constraint::Ratio(1, 3)].as_ref())
+            .split(frame.size());
+        frame.render_widget(widget, segments[0]);
+        let side_text = Block::default().title("Side Text").borders(Borders::ALL);
+        frame.render_widget(side_text, segments[1]);
+
+        segments[0]
+    }
+
     fn draw(&self, terminal: &mut Term, widget: BoardWidget) -> Result<(), UpdateError> {
         terminal.draw(|f| {
-            let border = Block::default().title("Santorini").borders(Borders::ALL);
-            f.render_widget(border, f.size());
-
-            let segments = Layout::default()
-                .direction(Direction::Horizontal)
-                .margin(1)
-                .constraints([Constraint::Min(15), Constraint::Ratio(1, 3)].as_ref())
-                .split(f.size());
-            f.render_widget(widget, segments[0]);
-            let side_text = Block::default().title("Side Text").borders(Borders::ALL);
-            f.render_widget(side_text, segments[1]);
+            self.do_draw(f, widget);
         })?;
         Ok(())
     }
@@ -648,9 +668,8 @@ impl Screen for App<Build> {
 
 impl Screen for App<Victory> {
     fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
-        self.draw(
-            terminal,
-            BoardWidget {
+        terminal.draw(|f| {
+            let widget = BoardWidget {
                 board: self.game.board(),
                 player: self.game.player(),
                 cursor: self.cursor,
@@ -668,8 +687,42 @@ impl Screen for App<Victory> {
                     .iter()
                     .map(|pawn| pawn.pos())
                     .collect(),
-            },
-        )?;
+            };
+            let game_rect = self.do_draw(f, widget);
+            let announce_width = 20;
+            let announce_height = 7;
+            let x_off = (game_rect.width - announce_width) / 2;
+            let y_off = (game_rect.height - announce_height) / 2;
+            let announce_rect = Rect::new(
+                game_rect.x + x_off,
+                game_rect.y + y_off,
+                announce_width,
+                announce_height,
+            );
+            f.render_widget(Clear, announce_rect);
+
+            let player_name = if self.game.player() == Player::PlayerOne {
+                Span::styled("Player One", PLAYER_ONE_TEXT_STYLE)
+            } else {
+                Span::styled("Player Two", PLAYER_TWO_TEXT_STYLE)
+            };
+            let text = vec![
+                Spans::from(vec![
+                    player_name,
+                    Span::styled(" wins!", Style::default().add_modifier(Modifier::BOLD)),
+                ]),
+                Spans::from(vec![]),
+                Spans::from(vec![]),
+                Spans::from(Span::raw("Press any key to quit...")),
+            ];
+            f.render_widget(
+                Paragraph::new(text)
+                    .block(Block::default().borders(Borders::ALL))
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: false }),
+                announce_rect,
+            );
+        })?;
 
         if let Some(event) = io::stdin().events().next() {
             match event? {
