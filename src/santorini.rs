@@ -621,20 +621,13 @@ impl Game<Build> {
             player: self.player.other(),
         };
 
+        // Note that after a move, there is always at least one valid build
+        // location (the place the pawn moved from), so we just need to check
+        // moves and not builds to determine a stalemate.
         if new_game
             .active_pawns()
             .iter()
-            .find_map(|pawn| {
-                pawn.actions().iter().find_map(|action| {
-                    match new_game.clone().apply(action.clone()) {
-                        ActionResult::Victory(_) => Some(()),
-                        ActionResult::Continue(g) => {
-                            g.active_pawn().actions().get(0)?;
-                            Some(())
-                        }
-                    }
-                })
-            })
+            .find(|pawn| pawn.actions().len() > 0)
             .is_some()
         {
             ActionResult::Continue(new_game)

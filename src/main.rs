@@ -170,6 +170,11 @@ impl Widget for BoardWidget {
 
         let left = area.left() + (area.width - BOARD_WIDGET_WIDTH) / 2;
         let top = area.top() + (area.height - BOARD_WIDGET_HEIGHT) / 2;
+        Clear.render(
+            Rect::new(left, top, BOARD_WIDGET_WIDTH, BOARD_WIDGET_HEIGHT),
+            buf,
+        );
+
         for x in 0..BOARD_WIDTH.0 as u16 {
             for y in 0..BOARD_HEIGHT.0 as u16 {
                 let area = Rect {
@@ -221,7 +226,15 @@ struct App<T: GameState> {
 }
 
 impl<T: GameState> App<T> {
-    fn do_draw(&self, frame: &mut Frame<Back>, widget: BoardWidget) -> Rect {
+    fn current_player_name(&self) -> Span {
+        if self.game.player() == Player::PlayerOne {
+            Span::styled("Player One", PLAYER_ONE_TEXT_STYLE)
+        } else {
+            Span::styled("Player Two", PLAYER_TWO_TEXT_STYLE)
+        }
+    }
+
+    fn do_draw(&self, frame: &mut Frame<Back>, widget: BoardWidget, title: Spans) -> Rect {
         let border = Block::default().title("Santorini").borders(Borders::ALL);
         frame.render_widget(border, frame.size());
 
@@ -230,16 +243,63 @@ impl<T: GameState> App<T> {
             .margin(1)
             .constraints([Constraint::Min(15), Constraint::Ratio(1, 3)].as_ref())
             .split(frame.size());
+
+        frame.render_widget(
+            Paragraph::new(vec![Spans::from(vec![]), title])
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: false }),
+            segments[0],
+        );
         frame.render_widget(widget, segments[0]);
-        let side_text = Block::default().title("Side Text").borders(Borders::ALL);
-        frame.render_widget(side_text, segments[1]);
+
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let instructions = vec![
+            Spans::from(vec![]),
+            Spans::from(vec![
+                Span::raw("Use arrow keys or "),
+                Span::styled("WASD", bold),
+                Span::raw(" to move cursor."),
+            ]),
+            Spans::from(vec![]),
+            Spans::from(vec![
+                Span::raw("Use "),
+                Span::styled("Enter", bold),
+                Span::raw(" to select."),
+            ]),
+            Spans::from(vec![]),
+            Spans::from(vec![
+                Span::raw("Use "),
+                Span::styled("Esc", bold),
+                Span::raw(" or "),
+                Span::styled("q", bold),
+                Span::raw(" to deselect."),
+            ]),
+            Spans::from(vec![]),
+            Spans::from(vec![
+                Span::raw("Use "),
+                Span::styled("Ctrl C", bold),
+                Span::raw(" to quit."),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(instructions)
+                .block(Block::default().title("Instructions").borders(Borders::ALL))
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: false }),
+            segments[1],
+        );
 
         segments[0]
     }
 
-    fn draw(&self, terminal: &mut Term, widget: BoardWidget) -> Result<(), UpdateError> {
+    fn draw(
+        &self,
+        terminal: &mut Term,
+        widget: BoardWidget,
+        title: Spans,
+    ) -> Result<(), UpdateError> {
         terminal.draw(|f| {
-            self.do_draw(f, widget);
+            self.do_draw(f, widget, title);
         })?;
         Ok(())
     }
@@ -351,6 +411,7 @@ impl Screen for App<PlaceOne> {
                 player1_locs: self.intermediate_loc.iter().cloned().collect(),
                 player2_locs: vec![],
             },
+            Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
         )?;
 
         if let Some(event) = io::stdin().events().next() {
@@ -358,7 +419,7 @@ impl Screen for App<PlaceOne> {
                 Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
                 Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
                     if self.intermediate_loc.is_none() {
-                        Err(UpdateError::Shutdown)
+                        Ok(self)
                     } else {
                         Ok(Box::new(App {
                             intermediate_loc: None,
@@ -418,6 +479,7 @@ impl Screen for App<PlaceTwo> {
                 player1_locs: self.game.player1_locs().to_vec(),
                 player2_locs: self.intermediate_loc.iter().cloned().collect(),
             },
+            Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
         )?;
 
         if let Some(event) = io::stdin().events().next() {
@@ -425,7 +487,7 @@ impl Screen for App<PlaceTwo> {
                 Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
                 Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
                     if self.intermediate_loc.is_none() {
-                        Err(UpdateError::Shutdown)
+                        Ok(self)
                     } else {
                         Ok(Box::new(App {
                             intermediate_loc: None,
@@ -521,6 +583,7 @@ impl Screen for App<Move> {
                     .map(|pawn| pawn.pos())
                     .collect(),
             },
+            Spans::from(vec![self.current_player_name(), Span::raw(" to move")]),
         )?;
 
         if let Some(event) = io::stdin().events().next() {
@@ -534,7 +597,7 @@ impl Screen for App<Move> {
                             ..*self
                         }))
                     } else {
-                        Err(UpdateError::Shutdown)
+                        Ok(self)
                     }
                 }
                 Event::Key(Key::Char('\n')) => {
@@ -615,6 +678,7 @@ impl Screen for App<Build> {
                     .map(|pawn| pawn.pos())
                     .collect(),
             },
+            Spans::from(vec![self.current_player_name(), Span::raw(" to build")]),
         )?;
 
         if let Some(event) = io::stdin().events().next() {
@@ -628,7 +692,7 @@ impl Screen for App<Build> {
                             ..*self
                         }))
                     } else {
-                        Err(UpdateError::Shutdown)
+                        Ok(self)
                     }
                 }
                 Event::Key(Key::Char('\n')) => {
@@ -688,7 +752,7 @@ impl Screen for App<Victory> {
                     .map(|pawn| pawn.pos())
                     .collect(),
             };
-            let game_rect = self.do_draw(f, widget);
+            let game_rect = self.do_draw(f, widget, Spans::from(vec![]));
             let announce_width = 20;
             let announce_height = 7;
             let x_off = (game_rect.width - announce_width) / 2;
@@ -701,14 +765,9 @@ impl Screen for App<Victory> {
             );
             f.render_widget(Clear, announce_rect);
 
-            let player_name = if self.game.player() == Player::PlayerOne {
-                Span::styled("Player One", PLAYER_ONE_TEXT_STYLE)
-            } else {
-                Span::styled("Player Two", PLAYER_TWO_TEXT_STYLE)
-            };
             let text = vec![
                 Spans::from(vec![
-                    player_name,
+                    self.current_player_name(),
                     Span::styled(" wins!", Style::default().add_modifier(Modifier::BOLD)),
                 ]),
                 Spans::from(vec![]),
