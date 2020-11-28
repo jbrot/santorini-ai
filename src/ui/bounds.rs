@@ -3,9 +3,16 @@ use tui::layout::Rect;
 use tui::style::Style;
 use tui::widgets::Widget;
 
+#[derive(Clone, Copy)]
 pub struct BoundsWidget {
     pub min_width: u16,
     pub min_height: u16,
+}
+
+impl BoundsWidget {
+    pub fn can_fit(&self, area: Rect) -> bool {
+        area.width >= self.min_width && area.height >= self.min_height
+    }
 }
 
 impl Widget for BoundsWidget {

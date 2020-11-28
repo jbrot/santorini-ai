@@ -9,6 +9,7 @@ use tui::Terminal;
 mod app;
 mod board;
 mod bounds;
+mod menu;
 
 pub use app::{new_app, App};
 pub use board::BoardWidget;
