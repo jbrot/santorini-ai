@@ -12,8 +12,8 @@ use tui::Terminal;
 
 mod santorini;
 use santorini::{
-    ActionResult, Board, Coord, Game, GameState, Move, NormalState, Pawn, PlaceOne, PlaceTwo,
-    Player, Point, BOARD_HEIGHT, BOARD_WIDTH,
+    ActionResult, Board, Build, Coord, Game, GameState, Move, NormalState, Pawn, PlaceOne,
+    PlaceTwo, Player, Point, Victory, BOARD_HEIGHT, BOARD_WIDTH,
 };
 
 struct BoundsWidget {
@@ -79,7 +79,7 @@ const PLAYER_ONE_STYLE: Style = Style {
 };
 const PLAYER_ONE_CURSOR_STYLE: Style = Style {
     bg: Some(Color::Indexed(45)),
-    fg: Some(Color::White),
+    fg: Some(Color::Black),
     ..DEFAULT_STYLE
 };
 const PLAYER_ONE_HIGHLIGHT_STYLE: Style = Style {
@@ -94,8 +94,8 @@ const PLAYER_TWO_STYLE: Style = Style {
     ..DEFAULT_STYLE
 };
 const PLAYER_TWO_CURSOR_STYLE: Style = Style {
-    bg: Some(Color::Indexed(204)),
-    fg: Some(Color::White),
+    bg: Some(Color::Indexed(213)),
+    fg: Some(Color::Black),
     ..DEFAULT_STYLE
 };
 const PLAYER_TWO_HIGHLIGHT_STYLE: Style = Style {
@@ -520,19 +520,18 @@ impl Screen for App<Move> {
                 Event::Key(Key::Char('\n')) => {
                     if let Some(pawn) = self.active_pawn() {
                         let action = pawn.can_move(self.cursor).unwrap();
-                        //match self.game.apply(action) {
-                        //    ActionResult::Continue(game) => Ok(Box::new(App {
-                        //            cursor: game.active_pawns()[0].pos(),
-                        //            game,
-                        //            intermediate_loc: None,
-                        //        })),
-                        //    ActionResult::Victory(game) => Ok(Box::new(App {
-                        //            cursor: self.cursor,
-                        //            game,
-                        //            intermediate_loc: None,
-                        //        })),
-                        //}
-                        Ok(self)
+                        match self.game.apply(action) {
+                            ActionResult::Continue(game) => Ok(Box::new(App {
+                                cursor: game.active_pawn().actions()[0].loc(),
+                                game,
+                                intermediate_loc: None,
+                            })),
+                            ActionResult::Victory(game) => Ok(Box::new(App {
+                                cursor: self.cursor,
+                                game,
+                                intermediate_loc: None,
+                            })),
+                        }
                     } else {
                         let pawn = self.pawn_at(self.cursor).unwrap();
                         if let Some(action) = pawn.actions().iter().next() {
@@ -558,6 +557,123 @@ impl Screen for App<Move> {
                 Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
                     Ok(Box::new(self.move_right(Some(highlights))))
                 }
+                _ => Ok(self),
+            }
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+impl Screen for App<Build> {
+    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
+        let highlights: Vec<Point> = self
+            .game
+            .active_pawn()
+            .actions()
+            .iter()
+            .map(|pair| pair.loc())
+            .collect();
+        self.draw(
+            terminal,
+            BoardWidget {
+                board: self.game.board(),
+                player: self.game.player(),
+                cursor: self.cursor,
+
+                highlights: highlights.clone(),
+                player1_locs: self
+                    .game
+                    .player1_pawns()
+                    .iter()
+                    .map(|pawn| pawn.pos())
+                    .collect(),
+                player2_locs: self
+                    .game
+                    .player2_pawns()
+                    .iter()
+                    .map(|pawn| pawn.pos())
+                    .collect(),
+            },
+        )?;
+
+        if let Some(event) = io::stdin().events().next() {
+            match event? {
+                Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
+                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                    if let Some(pawn_loc) = self.intermediate_loc {
+                        Ok(Box::new(App {
+                            intermediate_loc: None,
+                            cursor: pawn_loc,
+                            ..*self
+                        }))
+                    } else {
+                        Err(UpdateError::Shutdown)
+                    }
+                }
+                Event::Key(Key::Char('\n')) => {
+                    let action = self.game.active_pawn().can_build(self.cursor).unwrap();
+                    match self.game.apply(action) {
+                        ActionResult::Continue(game) => Ok(Box::new(App {
+                            cursor: game.active_pawns()[0].pos(),
+                            game,
+                            intermediate_loc: None,
+                        })),
+                        ActionResult::Victory(game) => Ok(Box::new(App {
+                            cursor: self.cursor,
+                            game,
+                            intermediate_loc: None,
+                        })),
+                    }
+                }
+                Event::Key(Key::Up) | Event::Key(Key::Char('w')) => {
+                    Ok(Box::new(self.move_up(Some(highlights))))
+                }
+                Event::Key(Key::Left) | Event::Key(Key::Char('a')) => {
+                    Ok(Box::new(self.move_left(Some(highlights))))
+                }
+                Event::Key(Key::Down) | Event::Key(Key::Char('s')) => {
+                    Ok(Box::new(self.move_down(Some(highlights))))
+                }
+                Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
+                    Ok(Box::new(self.move_right(Some(highlights))))
+                }
+                _ => Ok(self),
+            }
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+impl Screen for App<Victory> {
+    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
+        self.draw(
+            terminal,
+            BoardWidget {
+                board: self.game.board(),
+                player: self.game.player(),
+                cursor: self.cursor,
+
+                highlights: vec![],
+                player1_locs: self
+                    .game
+                    .player1_pawns()
+                    .iter()
+                    .map(|pawn| pawn.pos())
+                    .collect(),
+                player2_locs: self
+                    .game
+                    .player2_pawns()
+                    .iter()
+                    .map(|pawn| pawn.pos())
+                    .collect(),
+            },
+        )?;
+
+        if let Some(event) = io::stdin().events().next() {
+            match event? {
+                Event::Key(_) => Err(UpdateError::Shutdown),
                 _ => Ok(self),
             }
         } else {
