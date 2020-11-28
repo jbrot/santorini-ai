@@ -1,9 +1,11 @@
+use std::boxed::Box;
 use std::io;
 use termion::input::MouseTerminal;
 use termion::raw::RawTerminal;
 use thiserror::Error;
 use tui::backend::TermionBackend;
 use tui::style::{Color, Modifier, Style};
+use tui::text::{Span, Spans};
 use tui::Terminal;
 
 mod app;
@@ -14,6 +16,7 @@ mod menu;
 pub use app::{new_app, App};
 pub use board::BoardWidget;
 pub use bounds::BoundsWidget;
+pub use menu::Menu;
 
 pub type Back = TermionBackend<MouseTerminal<RawTerminal<io::Stdout>>>;
 pub type Term = Terminal<Back>;
@@ -28,6 +31,16 @@ pub enum UpdateError {
 
 pub trait Screen {
     fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError>;
+}
+
+pub fn main_menu<'a>() -> Box<dyn Screen> {
+    Box::new(Menu::new(
+        Span::styled("Santorini", Style::default().add_modifier(Modifier::BOLD)).into(),
+        vec![
+            (Spans::from("Start Game"), Box::new(|| Ok(new_app()))),
+            (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
+        ],
+    ))
 }
 
 pub const PLAYER_ONE_STYLE: Style = Style {

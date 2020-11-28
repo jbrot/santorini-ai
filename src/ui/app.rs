@@ -13,7 +13,8 @@ use crate::santorini::{
 };
 
 use crate::ui::{
-    Back, BoardWidget, Screen, Term, UpdateError, PLAYER_ONE_TEXT_STYLE, PLAYER_TWO_TEXT_STYLE,
+    self, Back, BoardWidget, Screen, Term, UpdateError, PLAYER_ONE_TEXT_STYLE,
+    PLAYER_TWO_TEXT_STYLE,
 };
 
 pub struct App<T: GameState> {
@@ -61,6 +62,8 @@ impl<T: GameState> App<T> {
             Spans::from(vec![
                 Span::raw("Use "),
                 Span::styled("Enter", bold),
+                Span::raw(" or "),
+                Span::styled("e", bold),
                 Span::raw(" to select."),
             ]),
             Spans::from(vec![]),
@@ -224,7 +227,7 @@ impl Screen for App<PlaceOne> {
                         }))
                     }
                 }
-                Event::Key(Key::Char('\n')) => {
+                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
                     if let Some(pos1) = self.intermediate_loc {
                         if pos1 != self.cursor {
                             let position = self.game.can_place(pos1, self.cursor).unwrap();
@@ -292,7 +295,7 @@ impl Screen for App<PlaceTwo> {
                         }))
                     }
                 }
-                Event::Key(Key::Char('\n')) => {
+                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
                     for pos in self.game.player1_locs().iter() {
                         if *pos == self.cursor {
                             return Ok(self);
@@ -397,7 +400,7 @@ impl Screen for App<Move> {
                         Ok(self)
                     }
                 }
-                Event::Key(Key::Char('\n')) => {
+                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
                     if let Some(pawn) = self.active_pawn() {
                         let action = pawn.can_move(self.cursor).unwrap();
                         match self.game.apply(action) {
@@ -492,7 +495,7 @@ impl Screen for App<Build> {
                         Ok(self)
                     }
                 }
-                Event::Key(Key::Char('\n')) => {
+                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
                     let action = self.game.active_pawn().can_build(self.cursor).unwrap();
                     match self.game.apply(action) {
                         ActionResult::Continue(game) => Ok(Box::new(App {
@@ -569,7 +572,7 @@ impl Screen for App<Victory> {
                 ]),
                 Spans::from(vec![]),
                 Spans::from(vec![]),
-                Spans::from(Span::raw("Press any key to quit...")),
+                Spans::from(Span::raw("Press any key to continue...")),
             ];
             f.render_widget(
                 Paragraph::new(text)
@@ -582,7 +585,10 @@ impl Screen for App<Victory> {
 
         if let Some(event) = io::stdin().events().next() {
             match event? {
-                Event::Key(_) => Err(UpdateError::Shutdown),
+                Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                    Err(UpdateError::Shutdown)
+                }
+                Event::Key(_) => Ok(ui::main_menu()),
                 _ => Ok(self),
             }
         } else {

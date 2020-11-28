@@ -7,13 +7,13 @@ use tui::Terminal;
 mod santorini;
 mod ui;
 
-use ui::{new_app, UpdateError};
+use ui::UpdateError;
 
 fn main() -> Result<(), UpdateError> {
     let stdout = MouseTerminal::from(io::stdout().into_raw_mode()?);
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let mut app = new_app();
+    let mut app = ui::main_menu();
 
     terminal.clear()?;
     loop {
