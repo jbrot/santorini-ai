@@ -1,5 +1,8 @@
 use std::io;
+use termion::event::{Event, Key};
+use termion::input::{MouseTerminal, TermRead};
 use termion::raw::{IntoRawMode, RawTerminal};
+use thiserror::Error;
 use tui::backend::TermionBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Constraint, Direction, Layout, Rect};
@@ -153,19 +156,28 @@ impl Widget for BoardWidget {
     }
 }
 
-type Term = Terminal<TermionBackend<RawTerminal<io::Stdout>>>;
+type Term = Terminal<TermionBackend<MouseTerminal<RawTerminal<io::Stdout>>>>;
+
+#[derive(Error, Debug)]
+enum UpdateError {
+    #[error("issue updating display")]
+    IoError(#[from] io::Error),
+    #[error("normal exit")]
+    Shutdown,
+}
 
 trait Screen {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, io::Error>;
+    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError>;
 }
 
 struct App<T: GameState> {
     game: Game<T>,
     cursor: Point,
+    intermediate_loc: Option<Point>,
 }
 
-impl Screen for App<PlaceOne> {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, io::Error> {
+impl<T: GameState> App<T> {
+    fn draw(&self, terminal: &mut Term, widget: BoardWidget) -> Result<(), UpdateError> {
         terminal.draw(|f| {
             let border = Block::default().title("Santorini").borders(Borders::ALL);
             f.render_widget(border, f.size());
@@ -175,20 +187,11 @@ impl Screen for App<PlaceOne> {
                 .margin(1)
                 .constraints([Constraint::Min(15), Constraint::Ratio(1, 3)].as_ref())
                 .split(f.size());
-            let game = BoardWidget {
-                board: self.game.board(),
-                player: self.game.player(),
-                cursor: self.cursor,
-
-                highlights: vec![],
-                player1_locs: vec![],
-                player2_locs: vec![],
-            };
-            f.render_widget(game, segments[0]);
+            f.render_widget(widget, segments[0]);
             let side_text = Block::default().title("Side Text").borders(Borders::ALL);
             f.render_widget(side_text, segments[1]);
         })?;
-        Ok(self)
+        Ok(())
     }
 }
 
@@ -196,11 +199,149 @@ fn new_app() -> Box<dyn Screen> {
     Box::new(App {
         game: santorini::new_game(),
         cursor: Point::new(0.into(), 0.into()),
+        intermediate_loc: None,
     })
 }
 
-fn main() -> Result<(), io::Error> {
-    let stdout = io::stdout().into_raw_mode()?;
+impl Screen for App<PlaceOne> {
+    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
+        self.draw(
+            terminal,
+            BoardWidget {
+                board: self.game.board(),
+                player: self.game.player(),
+                cursor: self.cursor,
+
+                highlights: vec![],
+                player1_locs: self.intermediate_loc.iter().cloned().collect(),
+                player2_locs: vec![],
+            },
+        )?;
+
+        let mut cursor = self.cursor;
+        let mut intermediate_loc = self.intermediate_loc;
+        if let Some(event) = io::stdin().events().next() {
+            match event? {
+                Event::Key(Key::Ctrl('c')) => return Err(UpdateError::Shutdown),
+                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                    if intermediate_loc.is_none() {
+                        return Err(UpdateError::Shutdown);
+                    } else {
+                        intermediate_loc = None
+                    }
+                }
+                Event::Key(Key::Char('\n')) => {
+                    if let Some(pos1) = intermediate_loc {
+                        if pos1 != cursor {
+                            let position = self.game.can_place(pos1, cursor).unwrap();
+                            return Ok(Box::new(App {
+                                game: self.game.apply(position),
+                                intermediate_loc: None,
+                                cursor: cursor,
+                            }));
+                        }
+                    } else {
+                        intermediate_loc = Some(cursor)
+                    }
+                }
+                Event::Key(Key::Up) => {
+                    cursor = Point::new_(cursor.x(), cursor.y() + (-1).into()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Down) => {
+                    cursor = Point::new_(cursor.x(), cursor.y() + 1.into()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Left) => {
+                    cursor = Point::new_(cursor.x() + (-1).into(), cursor.y()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Right) => {
+                    cursor = Point::new_(cursor.x() + 1.into(), cursor.y()).unwrap_or(cursor)
+                }
+                _ => (),
+            }
+        }
+        Ok(Box::new(App {
+            cursor,
+            intermediate_loc,
+            ..*self
+        }))
+    }
+}
+
+impl Screen for App<PlaceTwo> {
+    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
+        self.draw(
+            terminal,
+            BoardWidget {
+                board: self.game.board(),
+                player: self.game.player(),
+                cursor: self.cursor,
+
+                highlights: vec![],
+                player1_locs: self.game.player1_locs().to_vec(),
+                player2_locs: self.intermediate_loc.iter().cloned().collect(),
+            },
+        )?;
+
+        let mut cursor = self.cursor;
+        let mut intermediate_loc = self.intermediate_loc;
+        if let Some(event) = io::stdin().events().next() {
+            match event? {
+                Event::Key(Key::Ctrl('c')) => return Err(UpdateError::Shutdown),
+                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                    if intermediate_loc.is_none() {
+                        return Err(UpdateError::Shutdown);
+                    } else {
+                        intermediate_loc = None
+                    }
+                }
+                Event::Key(Key::Char('\n')) => {
+                    let mut valid = true;
+                    for pos in self.game.player1_locs().iter() {
+                        if *pos == cursor {
+                            valid = false;
+                            break;
+                        }
+                    }
+
+                    if valid {
+                        if let Some(pos1) = intermediate_loc {
+                            if pos1 != cursor {
+                                let position = self.game.can_place(pos1, cursor).unwrap();
+                                //return Ok(Box::new(App {
+                                //    game: self.game.apply(position),
+                                //    ..*self
+                                //}))
+                            }
+                        } else {
+                            intermediate_loc = Some(cursor)
+                        }
+                    }
+                }
+                Event::Key(Key::Up) => {
+                    cursor = Point::new_(cursor.x(), cursor.y() + (-1).into()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Down) => {
+                    cursor = Point::new_(cursor.x(), cursor.y() + 1.into()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Left) => {
+                    cursor = Point::new_(cursor.x() + (-1).into(), cursor.y()).unwrap_or(cursor)
+                }
+                Event::Key(Key::Right) => {
+                    cursor = Point::new_(cursor.x() + 1.into(), cursor.y()).unwrap_or(cursor)
+                }
+                _ => (),
+            }
+        }
+        Ok(Box::new(App {
+            cursor,
+            intermediate_loc,
+            ..*self
+        }))
+    }
+}
+
+fn main() -> Result<(), UpdateError> {
+    let stdout = MouseTerminal::from(io::stdout().into_raw_mode()?);
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let mut app = new_app();

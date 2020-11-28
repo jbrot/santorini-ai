@@ -708,6 +708,10 @@ pub struct PlaceTwo {
 impl GameState for PlaceTwo {}
 
 impl Game<PlaceTwo> {
+    pub fn player1_locs(&self) -> [Point; 2] {
+        self.state.player1_locs
+    }
+
     pub fn can_place(&self, pos1: Point, pos2: Point) -> Option<PlaceAction<PlaceTwo>> {
         for pos in self.state.player1_locs.iter() {
             if pos1 == *pos || pos2 == *pos {
