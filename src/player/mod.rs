@@ -1,9 +1,11 @@
 use crate::santorini::{Build, Game, GameState, Move, PlaceOne, PlaceTwo, Victory};
 use crate::ui::{BoardWidget, UpdateError};
 
+mod heuristic_ai;
 mod human;
 mod random_ai;
 
+pub use heuristic_ai::HeuristicAI;
 pub use human::HumanPlayer;
 pub use random_ai::RandomAI;
 

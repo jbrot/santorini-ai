@@ -3,11 +3,11 @@ use tui::layout::Rect;
 use tui::style::Style;
 use tui::widgets::{Block, Borders, Clear, Widget};
 
-use crate::santorini::{Board, Coord, Player, Point, BOARD_HEIGHT, BOARD_WIDTH};
+use crate::santorini::{Board, Coord, CoordLevel, Player, Point, BOARD_HEIGHT, BOARD_WIDTH};
 
 use crate::ui::{
     BoundsWidget, PLAYER_ONE_CURSOR_STYLE, PLAYER_ONE_HIGHLIGHT_STYLE, PLAYER_ONE_STYLE,
-    PLAYER_TWO_CURSOR_STYLE, PLAYER_TWO_HIGHLIGHT_STYLE, PLAYER_TWO_STYLE,
+    PLAYER_TWO_CURSOR_STYLE, PLAYER_TWO_HIGHLIGHT_STYLE, PLAYER_TWO_STYLE, GROUND_LEVEL_STYLE, LEVEL_ONE_STYLE, LEVEL_TWO_STYLE, LEVEL_THREE_STYLE, CAPPED_STYLE,
 };
 
 pub struct BoardWidget<'a> {
@@ -26,20 +26,26 @@ const BOARD_WIDGET_WIDTH: u16 = (BOARD_WIDTH.0 as u16) * SQUARE_SIZE;
 const BOARD_WIDGET_HEIGHT: u16 = (BOARD_HEIGHT.0 as u16) * SQUARE_SIZE;
 
 impl<'a> BoardWidget<'a> {
-    fn style(&self, point: Point) -> Option<Style> {
+    fn style(&self, point: Point) -> Style {
         for p in &self.player1_locs {
             if point == *p {
-                return Some(PLAYER_ONE_STYLE);
+                return PLAYER_ONE_STYLE;
             }
         }
 
         for p in &self.player2_locs {
             if point == *p {
-                return Some(PLAYER_TWO_STYLE);
+                return PLAYER_TWO_STYLE;
             }
         }
 
-        None
+        match self.board.level_at(point) {
+            CoordLevel::Ground => GROUND_LEVEL_STYLE,
+            CoordLevel::One => LEVEL_ONE_STYLE,
+            CoordLevel::Two => LEVEL_TWO_STYLE,
+            CoordLevel::Three => LEVEL_THREE_STYLE,
+            CoordLevel::Capped => CAPPED_STYLE,
+        }
     }
 
     fn border_style(&self, point: Point) -> Option<Style> {
@@ -92,10 +98,9 @@ impl<'a> Widget for BoardWidget<'a> {
                     height: SQUARE_SIZE,
                 };
                 let point = Point::new(Coord::from(x as i8), Coord::from(y as i8));
-                let mut block = Block::default().borders(Borders::ALL);
-                if let Some(style) = self.style(point) {
-                    block = block.style(style);
-                }
+                let mut block = Block::default()
+                    .borders(Borders::ALL)
+                    .style(self.style(point));
                 if let Some(style) = self.border_style(point) {
                     block = block.border_style(style);
                 }

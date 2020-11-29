@@ -8,7 +8,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::Terminal;
 
-use crate::player::{HumanPlayer, RandomAI};
+use crate::player::{HumanPlayer, HeuristicAI};
 
 mod app;
 mod board;
@@ -45,7 +45,7 @@ pub fn main_menu<'a>() -> Box<dyn Screen> {
             ),
             (
                 Spans::from("1 Player Game"),
-                Box::new(|| Ok(new_app(HumanPlayer::new(), RandomAI::new()))),
+                Box::new(|| Ok(new_app(HumanPlayer::new(), HeuristicAI::new()))),
             ),
             (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
         ],
@@ -101,4 +101,26 @@ const DEFAULT_STYLE: Style = Style {
     fg: None,
     add_modifier: Modifier::empty(),
     sub_modifier: Modifier::empty(),
+};
+
+pub const GROUND_LEVEL_STYLE: Style = DEFAULT_STYLE;
+pub const LEVEL_ONE_STYLE: Style = Style {
+    bg: Some(Color::Indexed(250)),
+    fg: Some(Color::Black),
+    ..DEFAULT_STYLE
+};
+pub const LEVEL_TWO_STYLE: Style = Style {
+    bg: Some(Color::Indexed(245)),
+    fg: Some(Color::White),
+    ..DEFAULT_STYLE
+};
+pub const LEVEL_THREE_STYLE: Style = Style {
+    bg: Some(Color::Indexed(240)),
+    fg: Some(Color::White),
+    ..DEFAULT_STYLE
+};
+pub const CAPPED_STYLE: Style = Style {
+    bg: Some(Color::Indexed(235)),
+    fg: Some(Color::Indexed(235)),
+    ..DEFAULT_STYLE
 };

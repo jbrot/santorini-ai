@@ -2,7 +2,7 @@ use derive_more::{Add, Display, From};
 
 use std::ops::{Deref, Sub};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Display, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Add, Display, From)]
 pub struct Coord(pub i8);
 
 impl Deref for Coord {
@@ -18,7 +18,7 @@ impl From<Coord> for usize {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Point {
     x: Coord,
     y: Coord,
@@ -111,7 +111,7 @@ mod point_tests {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub enum CoordLevel {
     Ground,
     One,
@@ -140,7 +140,7 @@ impl Sub for CoordLevel {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Board {
     pub grid: [[CoordLevel; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize],
 }
@@ -228,7 +228,7 @@ mod board_tests {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Player {
     PlayerOne,
     PlayerTwo,
@@ -250,7 +250,7 @@ pub trait NormalState {
     fn player2_locs(&self) -> [Point; 2];
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Game<S: GameState> {
     state: S,
     board: Board,
@@ -386,7 +386,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
 
 // Victory
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Victory {
     player1_locs: [Point; 2],
     player2_locs: [Point; 2],
@@ -402,7 +402,7 @@ impl NormalState for Victory {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ActionResult<T: GameState> {
     Continue(Game<T>),
     Victory(Game<Victory>),
@@ -426,7 +426,7 @@ impl<T: GameState> ActionResult<T> {
 
 // Moving
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Move {
     player1_locs: [Point; 2],
     player2_locs: [Point; 2],
