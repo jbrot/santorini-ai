@@ -132,24 +132,22 @@ impl Player<PlaceOne> for HumanPlayer {
     }
 
     fn step(&mut self, game: &Game<PlaceOne>) -> Result<StepResult, UpdateError> {
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if !self.intermediate_loc.is_none() {
-                        self.intermediate_loc = None;
-                    }
+        match io::stdin().events().next().unwrap()? {
+            Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                if !self.intermediate_loc.is_none() {
+                    self.intermediate_loc = None;
                 }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    if let Some(pos1) = self.intermediate_loc {
-                        if let Some(action) = game.can_place(pos1, self.cursor) {
-                            return Ok(StepResult::PlaceTwo(game.clone().apply(action)));
-                        }
-                    } else {
-                        self.intermediate_loc = Some(self.cursor);
-                    }
-                }
-                event => self.default_input_handler(event)?,
             }
+            Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
+                if let Some(pos1) = self.intermediate_loc {
+                    if let Some(action) = game.can_place(pos1, self.cursor) {
+                        return Ok(StepResult::PlaceTwo(game.clone().apply(action)));
+                    }
+                } else {
+                    self.intermediate_loc = Some(self.cursor);
+                }
+            }
+            event => self.default_input_handler(event)?,
         }
 
         Ok(StepResult::NoMove)
@@ -175,30 +173,28 @@ impl Player<PlaceTwo> for HumanPlayer {
     }
 
     fn step(&mut self, game: &Game<PlaceTwo>) -> Result<StepResult, UpdateError> {
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if !self.intermediate_loc.is_none() {
-                        self.intermediate_loc = None;
-                    }
+        match io::stdin().events().next().unwrap()? {
+            Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                if !self.intermediate_loc.is_none() {
+                    self.intermediate_loc = None;
                 }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    for pos in game.player1_locs().iter() {
-                        if *pos == self.cursor {
-                            return Ok(StepResult::NoMove);
-                        }
-                    }
-
-                    if let Some(pos1) = self.intermediate_loc {
-                        if let Some(action) = game.can_place(pos1, self.cursor) {
-                            return Ok(StepResult::Move(game.clone().apply(action)));
-                        }
-                    } else {
-                        self.intermediate_loc = Some(self.cursor);
-                    }
-                }
-                event => self.default_input_handler(event)?,
             }
+            Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
+                for pos in game.player1_locs().iter() {
+                    if *pos == self.cursor {
+                        return Ok(StepResult::NoMove);
+                    }
+                }
+
+                if let Some(pos1) = self.intermediate_loc {
+                    if let Some(action) = game.can_place(pos1, self.cursor) {
+                        return Ok(StepResult::Move(game.clone().apply(action)));
+                    }
+                } else {
+                    self.intermediate_loc = Some(self.cursor);
+                }
+            }
+            event => self.default_input_handler(event)?,
         }
 
         Ok(StepResult::NoMove)
@@ -217,35 +213,34 @@ impl Player<Move> for HumanPlayer {
     }
 
     fn step(&mut self, game: &Game<Move>) -> Result<StepResult, UpdateError> {
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if !self.intermediate_loc.is_none() {
-                        self.prepare(game);
-                    }
+        match io::stdin().events().next().unwrap()? {
+            Event::Key(Key::F(6)) => return Ok(StepResult::Victory(game.clone().resign())),
+            Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
+                if !self.intermediate_loc.is_none() {
+                    self.prepare(game);
                 }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    if let Some(pawn) = self
-                        .intermediate_loc
-                        .map(|loc| pawn_at(&game, loc))
-                        .flatten()
-                    {
-                        let action = pawn.can_move(self.cursor).unwrap();
-                        return match game.clone().apply(action) {
-                            ActionResult::Continue(game) => Ok(StepResult::Build(game)),
-                            ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
-                        };
-                    } else {
-                        let pawn = pawn_at(&game, self.cursor).unwrap();
-                        if let Some(action) = pawn.actions().iter().next() {
-                            self.intermediate_loc = Some(self.cursor);
-                            self.cursor = action.to();
-                            self.highlights = pawn.actions().iter().map(|pair| pair.to()).collect();
-                        }
-                    }
-                }
-                event => self.default_input_handler(event)?,
             }
+            Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
+                if let Some(pawn) = self
+                    .intermediate_loc
+                    .map(|loc| pawn_at(&game, loc))
+                    .flatten()
+                {
+                    let action = pawn.can_move(self.cursor).unwrap();
+                    return match game.clone().apply(action) {
+                        ActionResult::Continue(game) => Ok(StepResult::Build(game)),
+                        ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
+                    };
+                } else {
+                    let pawn = pawn_at(&game, self.cursor).unwrap();
+                    if let Some(action) = pawn.actions().iter().next() {
+                        self.intermediate_loc = Some(self.cursor);
+                        self.cursor = action.to();
+                        self.highlights = pawn.actions().iter().map(|pair| pair.to()).collect();
+                    }
+                }
+            }
+            event => self.default_input_handler(event)?,
         }
 
         Ok(StepResult::NoMove)
@@ -268,17 +263,16 @@ impl Player<Build> for HumanPlayer {
     }
 
     fn step(&mut self, game: &Game<Build>) -> Result<StepResult, UpdateError> {
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    let action = game.active_pawn().can_build(self.cursor).unwrap();
-                    return match game.clone().apply(action) {
-                        ActionResult::Continue(game) => Ok(StepResult::Move(game)),
-                        ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
-                    };
+        match io::stdin().events().next().unwrap()? {
+            Event::Key(Key::F(6)) => return Ok(StepResult::Victory(game.clone().resign())),
+            Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
+                let action = game.active_pawn().can_build(self.cursor).unwrap();
+                return match game.clone().apply(action) {
+                    ActionResult::Continue(game) => Ok(StepResult::Move(game)),
+                    ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
                 }
-                event => self.default_input_handler(event)?,
             }
+            event => self.default_input_handler(event)?,
         }
 
         Ok(StepResult::NoMove)

@@ -66,29 +66,37 @@ fn height_score(height: CoordLevel) -> f64 {
 }
 
 
-fn raw_score(game: &Game<Move>) -> f64 {
+fn player_score(game: &Game<Move>, player: santorini::Player) -> f64 {
     let pawn_score: f64 = game
-        .active_pawns()
+        .player_pawns(player)
         .iter()
         .map(|pawn| height_score(game
                                  .board()
                                  .level_at(pawn.pos())))
         .sum();
+    let pawn_score = pawn_score / 2.0;
+
     let move_scores: Vec<f64> = game
-        .active_pawns()
+        .player_pawns(player)
         .iter()
         .map(|pawn| pawn
-             .actions()
+             .neighbors()
              .into_iter()
-             .map(|mv| height_score(game
+             .map(|loc| height_score(game
                                     .board()
-                                    .level_at(mv.to()))))
+                                    .level_at(loc))))
         .flatten()
         .collect();
     let move_sum: f64 = move_scores.iter().sum();
     let move_score: f64 = move_sum / (move_scores.len() as f64);
-    let subtotal = pawn_score * 0.7 + move_score * 0.3;
-    subtotal * 0.75
+
+    pawn_score * 0.7 + move_score * 0.3
+}
+
+fn raw_score(game: &Game<Move>) -> f64 {
+    let s1 = player_score(game, game.player());
+    let s2 = player_score(game, game.player().other());
+    s1 - s2
 }
 
 fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) -> f64 {
@@ -96,7 +104,7 @@ fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) ->
         ActionResult::Victory(_) => if active_player { 1.0 } else { -1.0 },
         ActionResult::Continue(game) => {
             if depth == 0 {
-                raw_score(game) * if active_player { 1.0 } else { -1.0 }
+                raw_score(game) * if active_player { -1.0 } else { 1.0 }
             } else {
                 let scores = possible_actions(game)
                     .into_iter()
@@ -144,8 +152,8 @@ fn choose_action(game: &Game<Move>) -> (MoveAction, Option<BuildAction>) {
 
 fn random_pt() -> Point {
     let mut rng = rand::thread_rng();
-    let x: i8 = rng.gen_range(0, santorini::BOARD_WIDTH.0);
-    let y: i8 = rng.gen_range(0, santorini::BOARD_HEIGHT.0);
+    let x: i8 = rng.gen_range(1, santorini::BOARD_WIDTH.0 - 1);
+    let y: i8 = rng.gen_range(1, santorini::BOARD_HEIGHT.0 - 1);
     Point::new(x.into(), y.into())
 }
 

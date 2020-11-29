@@ -321,6 +321,17 @@ impl<S: GameState + NormalState> Game<S> {
     pub fn inactive_pawns(&self) -> [Pawn<S>; 2] {
         self.player_pawns(self.player.other())
     }
+
+    pub fn resign(self) -> Game<Victory> {
+        Game {
+            state: Victory {
+                player1_locs: self.state.player_locs(Player::PlayerOne),
+                player2_locs: self.state.player_locs(Player::PlayerTwo),
+            },
+            board: self.board,
+            player: self.player.other(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

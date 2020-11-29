@@ -75,6 +75,12 @@ impl<T: GameState> App<T> {
             Spans::from(vec![]),
             Spans::from(vec![
                 Span::raw("Use "),
+                Span::styled("F6", bold),
+                Span::raw(" to resign."),
+            ]),
+            Spans::from(vec![]),
+            Spans::from(vec![
+                Span::raw("Use "),
                 Span::styled("Ctrl C", bold),
                 Span::raw(" to quit."),
             ]),
