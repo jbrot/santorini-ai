@@ -8,7 +8,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::Terminal;
 
-use crate::player::HumanPlayer;
+use crate::player::{HumanPlayer, RandomAI};
 
 mod app;
 mod board;
@@ -40,8 +40,12 @@ pub fn main_menu<'a>() -> Box<dyn Screen> {
         Span::styled("Santorini", Style::default().add_modifier(Modifier::BOLD)).into(),
         vec![
             (
-                Spans::from("Start Game"),
+                Spans::from("2 Player Game"),
                 Box::new(|| Ok(new_app(HumanPlayer::new(), HumanPlayer::new()))),
+            ),
+            (
+                Spans::from("1 Player Game"),
+                Box::new(|| Ok(new_app(HumanPlayer::new(), RandomAI::new()))),
             ),
             (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
         ],

@@ -2,8 +2,10 @@ use crate::santorini::{Build, Game, GameState, Move, PlaceOne, PlaceTwo, Victory
 use crate::ui::{BoardWidget, UpdateError};
 
 mod human;
+mod random_ai;
 
 pub use human::HumanPlayer;
+pub use random_ai::RandomAI;
 
 pub enum StepResult {
     NoMove,
