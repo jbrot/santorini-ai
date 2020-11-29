@@ -17,8 +17,9 @@ This AI moves randomly.
 This AI looks a few moves in the future with the following goals:
 1. Win
 2. Prevent the opponent from winning
-3. a. Minimize distance between the AI pawns and the opponents' pawns
-   b. Maximize the height of the AI pawns relative to the opponents' pawns, where a pawn's height is computed by looking at its height and the height of its neighbors.
+3. Both:
+   - Minimize distance between the AI pawns and the opponents' pawns
+   - Maximize the height of the AI pawns relative to the opponents' pawns, where a pawn's height is computed by looking at its height and the height of its neighbors.
 
 # Status
 
