@@ -6,7 +6,8 @@ use std::mem;
 
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
-    self, ActionResult, Build, BuildAction, CoordLevel, MoveAction, Game, GameState, Move, NormalState, PlaceOne, PlaceTwo, Point,
+    self, ActionResult, Build, BuildAction, CoordLevel, Game, GameState, Move, MoveAction,
+    NormalState, PlaceOne, PlaceTwo, Point,
 };
 use crate::ui::{BoardWidget, UpdateError};
 
@@ -19,7 +20,10 @@ pub struct HeuristicAI {
 
 impl HeuristicAI {
     pub fn new() -> Box<dyn FullPlayer> {
-        Box::new(HeuristicAI { mv: None, build: None })
+        Box::new(HeuristicAI {
+            mv: None,
+            build: None,
+        })
     }
 }
 
@@ -30,14 +34,23 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
         cursor: None,
 
         highlights: &EMPTY,
-        player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
-        player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
+        player1_locs: game
+            .player_pawns(santorini::Player::PlayerOne)
+            .iter()
+            .map(|pawn| pawn.pos())
+            .collect(),
+        player2_locs: game
+            .player_pawns(santorini::Player::PlayerTwo)
+            .iter()
+            .map(|pawn| pawn.pos())
+            .collect(),
     }
 }
 
-fn possible_actions(game: &Game<Move>) -> Vec<((MoveAction, Option<BuildAction>), ActionResult<Move>)> {
-    game
-        .clone()
+fn possible_actions(
+    game: &Game<Move>,
+) -> Vec<((MoveAction, Option<BuildAction>), ActionResult<Move>)> {
+    game.clone()
         .active_pawns()
         .iter()
         .map(|pawn| pawn.actions())
@@ -65,26 +78,22 @@ fn height_score(height: CoordLevel) -> f64 {
     }
 }
 
-
 fn player_score(game: &Game<Move>, player: santorini::Player) -> f64 {
     let pawn_score: f64 = game
         .player_pawns(player)
         .iter()
-        .map(|pawn| height_score(game
-                                 .board()
-                                 .level_at(pawn.pos())))
+        .map(|pawn| height_score(game.board().level_at(pawn.pos())))
         .sum();
     let pawn_score = pawn_score / 2.0;
 
     let move_scores: Vec<f64> = game
         .player_pawns(player)
         .iter()
-        .map(|pawn| pawn
-             .neighbors()
-             .into_iter()
-             .map(|loc| height_score(game
-                                    .board()
-                                    .level_at(loc))))
+        .map(|pawn| {
+            pawn.neighbors()
+                .into_iter()
+                .map(|loc| height_score(game.board().level_at(loc)))
+        })
         .flatten()
         .collect();
     let move_sum: f64 = move_scores.iter().sum();
@@ -93,18 +102,39 @@ fn player_score(game: &Game<Move>, player: santorini::Player) -> f64 {
     pawn_score * 0.7 + move_score * 0.3
 }
 
-fn raw_score(game: &Game<Move>) -> f64 {
+fn diff_score(game: &Game<Move>) -> f64 {
     let s1 = player_score(game, game.player());
     let s2 = player_score(game, game.player().other());
     s1 - s2
 }
 
+fn dist_score(game: &Game<Move>) -> f64 {
+    let mut max_dist = 0;
+    for p1 in game.active_pawns().iter() {
+        for p2 in game.inactive_pawns().iter() {
+            max_dist = i8::max(max_dist, p1.pos().distance(p2.pos()));
+        }
+    }
+    let dist_score = 1.0 - (max_dist as f64) / 5.0;
+    dist_score * dist_score
+}
+
 fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) -> f64 {
     match action {
-        ActionResult::Victory(_) => if active_player { 1.0 } else { -1.0 },
+        ActionResult::Victory(_) => {
+            if active_player {
+                1.0
+            } else {
+                -1.0
+            }
+        }
         ActionResult::Continue(game) => {
             if depth == 0 {
-                raw_score(game) * if active_player { -1.0 } else { 1.0 }
+                if active_player {
+                    0.3 * dist_score(game) - 0.7 * diff_score(game)
+                } else {
+                    0.3 * dist_score(game) + 0.7 * diff_score(game)
+                }
             } else {
                 let scores = possible_actions(game)
                     .into_iter()
@@ -129,7 +159,7 @@ fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) ->
                     max
                 }
             }
-        },
+        }
     }
 }
 
@@ -145,7 +175,11 @@ fn score(action: &ActionResult<Move>) -> f64 {
 fn choose_action(game: &Game<Move>) -> (MoveAction, Option<BuildAction>) {
     possible_actions(game)
         .into_iter()
-        .max_by(|a, b| score(&a.1).partial_cmp(&score(&b.1)).unwrap_or(Ordering::Equal))
+        .max_by(|a, b| {
+            score(&a.1)
+                .partial_cmp(&score(&b.1))
+                .unwrap_or(Ordering::Equal)
+        })
         .expect("No good moves found!")
         .0
 }
@@ -233,7 +267,7 @@ impl Player<Move> for HeuristicAI {
 }
 
 impl Player<Build> for HeuristicAI {
-    fn prepare(&mut self, _: &Game<Build>) { }
+    fn prepare(&mut self, _: &Game<Build>) {}
 
     fn render(&self, game: &Game<Build>) -> BoardWidget {
         default_render(game)

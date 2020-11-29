@@ -96,9 +96,11 @@ impl<T: GameState> App<T> {
         segments[0]
     }
 
-    fn transition<U>(mut self, game: Game<U>) -> App<U> where
+    fn transition<U>(mut self, game: Game<U>) -> App<U>
+    where
         U: GameState,
-        dyn FullPlayer: player::Player<U> {
+        dyn FullPlayer: player::Player<U>,
+    {
         match game.player() {
             Player::PlayerOne => self.player_one.prepare(&game),
             Player::PlayerTwo => self.player_two.prepare(&game),

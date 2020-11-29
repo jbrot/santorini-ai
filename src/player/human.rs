@@ -98,8 +98,16 @@ impl HumanPlayer {
             cursor: Some(self.cursor),
 
             highlights: &self.highlights,
-            player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
-            player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
+            player1_locs: game
+                .player_pawns(santorini::Player::PlayerOne)
+                .iter()
+                .map(|pawn| pawn.pos())
+                .collect(),
+            player2_locs: game
+                .player_pawns(santorini::Player::PlayerTwo)
+                .iter()
+                .map(|pawn| pawn.pos())
+                .collect(),
         }
     }
 }
@@ -270,7 +278,7 @@ impl Player<Build> for HumanPlayer {
                 return match game.clone().apply(action) {
                     ActionResult::Continue(game) => Ok(StepResult::Move(game)),
                     ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
-                }
+                };
             }
             event => self.default_input_handler(event)?,
         }

@@ -8,7 +8,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::Terminal;
 
-use crate::player::{HumanPlayer, HeuristicAI};
+use crate::player::{HeuristicAI, HumanPlayer};
 
 mod app;
 mod board;

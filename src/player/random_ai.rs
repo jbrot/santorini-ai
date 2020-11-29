@@ -1,9 +1,9 @@
-use rand::Rng;
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
     self, ActionResult, Build, Game, GameState, Move, NormalState, PlaceOne, PlaceTwo, Point,
 };
 use crate::ui::{BoardWidget, UpdateError};
+use rand::Rng;
 
 static EMPTY: Vec<Point> = Vec::new();
 
@@ -22,8 +22,16 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
         cursor: None,
 
         highlights: &EMPTY,
-        player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
-        player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
+        player1_locs: game
+            .player_pawns(santorini::Player::PlayerOne)
+            .iter()
+            .map(|pawn| pawn.pos())
+            .collect(),
+        player2_locs: game
+            .player_pawns(santorini::Player::PlayerTwo)
+            .iter()
+            .map(|pawn| pawn.pos())
+            .collect(),
     }
 }
 
@@ -108,7 +116,7 @@ impl Player<Move> for RandomAI {
 }
 
 impl Player<Build> for RandomAI {
-    fn prepare(&mut self, _: &Game<Build>) { }
+    fn prepare(&mut self, _: &Game<Build>) {}
 
     fn render(&self, game: &Game<Build>) -> BoardWidget {
         default_render(game)
