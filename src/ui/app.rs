@@ -126,7 +126,7 @@ pub fn new_app(
 }
 
 macro_rules! standard_state {
-    ($state:ty) => {
+    ($state:ty, $title: literal) => {
         impl Screen for App<$state> {
             fn update(
                 mut self: Box<Self>,
@@ -141,7 +141,7 @@ macro_rules! standard_state {
                     self.do_draw(
                         f,
                         active_player.render(&self.game),
-                        Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
+                        Spans::from(vec![self.current_player_name(), Span::raw(concat!(" to ", $title))]),
                     );
                 })?;
 
@@ -166,10 +166,10 @@ macro_rules! standard_state {
     };
 }
 
-standard_state!(PlaceOne);
-standard_state!(PlaceTwo);
-standard_state!(Move);
-standard_state!(Build);
+standard_state!(PlaceOne, "place");
+standard_state!(PlaceTwo, "place");
+standard_state!(Move, "move");
+standard_state!(Build, "build");
 
 impl Screen for App<Victory> {
     fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
