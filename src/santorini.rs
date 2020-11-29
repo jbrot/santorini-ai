@@ -1,6 +1,7 @@
 use derive_more::{Add, Display, From};
 
 use std::ops::{Deref, Sub};
+use std::slice::Iter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Add, Display, From)]
 pub struct Coord(pub i8);
@@ -241,13 +242,17 @@ impl Player {
             Player::PlayerTwo => Player::PlayerOne,
         }
     }
+
+    pub fn iter() -> Iter<'static, Player> {
+        static PLAYERS: [Player; 2] = [Player::PlayerOne, Player::PlayerTwo];
+        PLAYERS.iter()
+    }
 }
 
 pub trait GameState {}
 
 pub trait NormalState {
-    fn player1_locs(&self) -> [Point; 2];
-    fn player2_locs(&self) -> [Point; 2];
+    fn player_locs(&self, player: Player) -> [Point; 2];
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -281,67 +286,40 @@ impl<S: GameState + NormalState> Game<S> {
             return false;
         }
 
-        for pos in self.state.player1_locs().iter() {
-            if *pos == loc {
-                return false;
-            }
-        }
-
-        for pos in self.state.player2_locs().iter() {
-            if *pos == loc {
-                return false;
+        for player in Player::iter() {
+            for pos in self.state.player_locs(*player).iter() {
+                if *pos == loc {
+                    return false;
+                }
             }
         }
 
         true
     }
 
-    pub fn player1_pawns(&self) -> [Pawn<S>; 2] {
+    pub fn player_pawns(&self, player: Player) -> [Pawn<S>; 2] {
         // TODO: Use map (currently nightly only)
-        let [l1, l2] = self.state.player1_locs();
+        let [l1, l2] = self.state.player_locs(player);
         [
             Pawn {
                 game: self,
                 pos: l1,
-                player: Player::PlayerOne,
+                player,
             },
             Pawn {
                 game: self,
                 pos: l2,
-                player: Player::PlayerOne,
-            },
-        ]
-    }
-
-    pub fn player2_pawns(&self) -> [Pawn<S>; 2] {
-        // TODO: Use map (currently nightly only)
-        let [l1, l2] = self.state.player2_locs();
-        [
-            Pawn {
-                game: self,
-                pos: l1,
-                player: Player::PlayerTwo,
-            },
-            Pawn {
-                game: self,
-                pos: l2,
-                player: Player::PlayerTwo,
+                player,
             },
         ]
     }
 
     pub fn active_pawns(&self) -> [Pawn<S>; 2] {
-        match self.player {
-            Player::PlayerOne => self.player1_pawns(),
-            Player::PlayerTwo => self.player2_pawns(),
-        }
+        self.player_pawns(self.player)
     }
 
     pub fn inactive_pawns(&self) -> [Pawn<S>; 2] {
-        match self.player {
-            Player::PlayerOne => self.player2_pawns(),
-            Player::PlayerTwo => self.player1_pawns(),
-        }
+        self.player_pawns(self.player.other())
     }
 }
 
@@ -393,12 +371,11 @@ pub struct Victory {
 }
 impl GameState for Victory {}
 impl NormalState for Victory {
-    fn player1_locs(&self) -> [Point; 2] {
-        self.player1_locs
-    }
-
-    fn player2_locs(&self) -> [Point; 2] {
-        self.player2_locs
+    fn player_locs(&self, player: Player) -> [Point; 2] {
+        match player {
+            Player::PlayerOne => self.player1_locs,
+            Player::PlayerTwo => self.player2_locs,
+        }
     }
 }
 
@@ -433,12 +410,11 @@ pub struct Move {
 }
 impl GameState for Move {}
 impl NormalState for Move {
-    fn player1_locs(&self) -> [Point; 2] {
-        self.player1_locs
-    }
-
-    fn player2_locs(&self) -> [Point; 2] {
-        self.player2_locs
+    fn player_locs(&self, player: Player) -> [Point; 2] {
+        match player {
+            Player::PlayerOne => self.player1_locs,
+            Player::PlayerTwo => self.player2_locs,
+        }
     }
 }
 
@@ -549,12 +525,11 @@ pub struct Build {
 }
 impl GameState for Build {}
 impl NormalState for Build {
-    fn player1_locs(&self) -> [Point; 2] {
-        self.player1_locs
-    }
-
-    fn player2_locs(&self) -> [Point; 2] {
-        self.player2_locs
+    fn player_locs(&self, player: Player) -> [Point; 2] {
+        match player {
+            Player::PlayerOne => self.player1_locs,
+            Player::PlayerTwo => self.player2_locs,
+        }
     }
 }
 
@@ -795,10 +770,10 @@ mod game_tests {
         let g = g.apply(action);
         assert_eq!(Player::PlayerOne, g.player());
 
-        let [pawn1, pawn2] = g.player1_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
         assert_eq!(pawn1.pos(), pt1);
         assert_eq!(pawn2.pos(), pt2);
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn3, pawn4] = g.inactive_pawns();
         assert_eq!(pawn3.pos(), pt3);
         assert_eq!(pawn4.pos(), pt4);
 
@@ -814,10 +789,10 @@ mod game_tests {
         let g = g.apply(action).expect("Invalid victory!");
         assert_eq!(Player::PlayerOne, g.player());
 
-        let [pawn1, pawn2] = g.player1_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
         assert_eq!(pawn1.pos(), pt5);
         assert_eq!(pawn2.pos(), pt2);
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn3, pawn4] = g.inactive_pawns();
         assert_eq!(pawn3.pos(), pt3);
         assert_eq!(pawn4.pos(), pt4);
 
@@ -832,10 +807,10 @@ mod game_tests {
         let g = g.apply(action).expect("Invalid victory!");
         assert_eq!(Player::PlayerTwo, g.player());
 
-        let [pawn1, pawn2] = g.player1_pawns();
+        let [pawn1, pawn2] = g.inactive_pawns();
         assert_eq!(pawn1.pos(), pt5);
         assert_eq!(pawn2.pos(), pt2);
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn3, pawn4] = g.active_pawns();
         assert_eq!(pawn3.pos(), pt3);
         assert_eq!(pawn4.pos(), pt4);
 
@@ -860,8 +835,8 @@ mod game_tests {
         let action = g.can_place(pt3, pt4).expect("Invalid placement!");
         let g = g.apply(action);
 
-        let [pawn1, pawn2] = g.player1_pawns();
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
+        let [pawn3, pawn4] = g.inactive_pawns();
 
         let neighbors1 = [
             Point::new(1.into(), 0.into()),
@@ -910,8 +885,8 @@ mod game_tests {
         let action = g.can_place(pt3, pt4).expect("Invalid placement!");
         let g = g.apply(action);
 
-        let [pawn1, pawn2] = g.player1_pawns();
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
+        let [pawn3, pawn4] = g.inactive_pawns();
 
         let moves1 = [
             MoveAction {
@@ -993,12 +968,12 @@ mod game_tests {
         let g = g.apply(action);
 
         let pt1a = Point::new(0.into(), 1.into());
-        let [pawn1, _] = g.player1_pawns();
+        let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid move!");
         let g = g.apply(action).expect("Invalid victory!");
 
-        let [pawn1, pawn2] = g.player1_pawns();
-        let [pawn3, pawn4] = g.player2_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
+        let [pawn3, pawn4] = g.inactive_pawns();
 
         let build1 = [
             BuildAction {
@@ -1042,8 +1017,8 @@ mod game_tests {
         let action = g.can_place(pt3, pt4).expect("Invalid placement!");
         let g = g.apply(action);
 
-        let [pawn1, pawn2] = g.player1_pawns();
-        let [pawn3, _] = g.player2_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
+        let [pawn3, _] = g.inactive_pawns();
 
         assert_eq!(None, pawn1.can_move(pt2));
         assert_eq!(None, pawn1.can_move(pt3));
@@ -1071,12 +1046,12 @@ mod game_tests {
         let g = g.apply(action);
 
         let pt1a = Point::new(1.into(), 0.into());
-        let [pawn1, _] = g.player1_pawns();
+        let [pawn1, _] = g.active_pawns();
         let action = pawn1.can_move(pt1a).expect("Invalid movement!");
         let g = g.apply(action).expect("Invalid victory!");
 
-        let [pawn1, pawn2] = g.player1_pawns();
-        let [pawn3, _] = g.player2_pawns();
+        let [pawn1, pawn2] = g.active_pawns();
+        let [pawn3, _] = g.inactive_pawns();
 
         assert_eq!(pawn1, g.active_pawn());
 

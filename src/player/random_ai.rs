@@ -22,8 +22,8 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
         cursor: None,
 
         highlights: &EMPTY,
-        player1_locs: game.player1_pawns().iter().map(|pawn| pawn.pos()).collect(),
-        player2_locs: game.player2_pawns().iter().map(|pawn| pawn.pos()).collect(),
+        player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
+        player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
     }
 }
 

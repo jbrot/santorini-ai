@@ -30,8 +30,8 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
         cursor: None,
 
         highlights: &EMPTY,
-        player1_locs: game.player1_pawns().iter().map(|pawn| pawn.pos()).collect(),
-        player2_locs: game.player2_pawns().iter().map(|pawn| pawn.pos()).collect(),
+        player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
+        player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
     }
 }
 
@@ -65,6 +65,7 @@ fn height_score(height: CoordLevel) -> f64 {
     }
 }
 
+
 fn raw_score(game: &Game<Move>) -> f64 {
     let pawn_score: f64 = game
         .active_pawns()
@@ -86,7 +87,7 @@ fn raw_score(game: &Game<Move>) -> f64 {
         .collect();
     let move_sum: f64 = move_scores.iter().sum();
     let move_score: f64 = move_sum / (move_scores.len() as f64);
-    let subtotal = pawn_score * 0.3 + move_score * 0.7;
+    let subtotal = pawn_score * 0.7 + move_score * 0.3;
     subtotal * 0.75
 }
 
@@ -101,15 +102,23 @@ fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) ->
                     .into_iter()
                     .map(|(_, action)| score_recurse(&action, !active_player, depth - 1));
                 if active_player {
-                    scores
-                        .max_by(|a, b| a
-                                .partial_cmp(&b)
-                                .unwrap_or(Ordering::Equal))
-                        .expect("No moves found!")
+                    let mut min = f64::MAX;
+                    for score in scores {
+                        if score == -1.0 {
+                            return -1.0;
+                        }
+                        min = f64::min(min, score);
+                    }
+                    min
                 } else {
-                    let len = scores.len() as f64;
-                    let sum: f64 = scores.sum();
-                    (sum / len).max(-1.0).min(1.0)
+                    let mut max = f64::MIN;
+                    for score in scores {
+                        if score == 1.0 {
+                            return 1.0;
+                        }
+                        max = f64::max(max, score);
+                    }
+                    max
                 }
             }
         },
@@ -122,7 +131,7 @@ fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) ->
     convert = "{ action.clone() }"
 )]
 fn score(action: &ActionResult<Move>) -> f64 {
-    score_recurse(action, false, 2)
+    score_recurse(action, true, 2)
 }
 
 fn choose_action(game: &Game<Move>) -> (MoveAction, Option<BuildAction>) {
@@ -191,10 +200,9 @@ impl Player<PlaceTwo> for HeuristicAI {
 }
 
 impl Player<Move> for HeuristicAI {
-    fn prepare(&mut self, game: &Game<Move>) {
-        let (mv, build) = choose_action(game);
-        self.mv = Some(mv);
-        self.build = build;
+    fn prepare(&mut self, _: &Game<Move>) {
+        self.mv = None;
+        self.build = None;
     }
 
     fn render(&self, game: &Game<Move>) -> BoardWidget {
@@ -202,6 +210,12 @@ impl Player<Move> for HeuristicAI {
     }
 
     fn step(&mut self, game: &Game<Move>) -> Result<StepResult, UpdateError> {
+        if let None = self.mv {
+            let (mv, build) = choose_action(game);
+            self.mv = Some(mv);
+            self.build = build;
+        }
+
         let action = mem::replace(&mut self.mv, None).expect("No move selected!");
         match game.clone().apply(action) {
             ActionResult::Continue(game) => Ok(StepResult::Build(game)),

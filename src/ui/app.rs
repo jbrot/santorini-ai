@@ -174,13 +174,13 @@ impl Screen for App<Victory> {
                 highlights: &vec![],
                 player1_locs: self
                     .game
-                    .player1_pawns()
+                    .player_pawns(santorini::Player::PlayerOne)
                     .iter()
                     .map(|pawn| pawn.pos())
                     .collect(),
                 player2_locs: self
                     .game
-                    .player2_pawns()
+                    .player_pawns(santorini::Player::PlayerTwo)
                     .iter()
                     .map(|pawn| pawn.pos())
                     .collect(),

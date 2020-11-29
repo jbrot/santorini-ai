@@ -4,7 +4,7 @@ use termion::input::TermRead;
 
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
-    ActionResult, Build, Game, GameState, Move, NormalState, Pawn, PlaceOne, PlaceTwo, Point,
+    self, ActionResult, Build, Game, GameState, Move, NormalState, Pawn, PlaceOne, PlaceTwo, Point,
 };
 use crate::ui::{BoardWidget, UpdateError};
 
@@ -98,8 +98,8 @@ impl HumanPlayer {
             cursor: Some(self.cursor),
 
             highlights: &self.highlights,
-            player1_locs: game.player1_pawns().iter().map(|pawn| pawn.pos()).collect(),
-            player2_locs: game.player2_pawns().iter().map(|pawn| pawn.pos()).collect(),
+            player1_locs: game.player_pawns(santorini::Player::PlayerOne).iter().map(|pawn| pawn.pos()).collect(),
+            player2_locs: game.player_pawns(santorini::Player::PlayerTwo).iter().map(|pawn| pawn.pos()).collect(),
         }
     }
 }
