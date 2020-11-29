@@ -14,7 +14,7 @@ use crate::ui::{
     PLAYER_TWO_TEXT_STYLE,
 };
 
-use crate::player::{FullPlayer, StepResult};
+use crate::player::{self, FullPlayer, StepResult};
 
 pub struct App<T: GameState> {
     game: Game<T>,
@@ -89,6 +89,21 @@ impl<T: GameState> App<T> {
 
         segments[0]
     }
+
+    fn transition<U>(mut self, game: Game<U>) -> App<U> where
+        U: GameState,
+        dyn FullPlayer: player::Player<U> {
+        match game.player() {
+            Player::PlayerOne => self.player_one.prepare(&game),
+            Player::PlayerTwo => self.player_two.prepare(&game),
+        };
+
+        App {
+            game,
+            player_one: self.player_one,
+            player_two: self.player_two,
+        }
+    }
 }
 
 pub fn new_app(
@@ -129,21 +144,9 @@ macro_rules! standard_state {
 
                 match active_player.step(&self.game)? {
                     StepResult::NoMove => Ok(self),
-                    StepResult::PlaceTwo(game) => Ok(Box::new(App {
-                        game,
-                        player_one: self.player_one,
-                        player_two: self.player_two,
-                    })),
-                    StepResult::Move(game) => Ok(Box::new(App {
-                        game,
-                        player_one: self.player_one,
-                        player_two: self.player_two,
-                    })),
-                    StepResult::Build(game) => Ok(Box::new(App {
-                        game,
-                        player_one: self.player_one,
-                        player_two: self.player_two,
-                    })),
+                    StepResult::PlaceTwo(game) => Ok(Box::new(self.transition(game))),
+                    StepResult::Move(game) => Ok(Box::new(self.transition(game))),
+                    StepResult::Build(game) => Ok(Box::new(self.transition(game))),
                     StepResult::Victory(game) => Ok(Box::new(App {
                         game,
                         player_one: self.player_one,
