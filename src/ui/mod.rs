@@ -8,6 +8,8 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::Terminal;
 
+use crate::player::HumanPlayer;
+
 mod app;
 mod board;
 mod bounds;
@@ -37,7 +39,10 @@ pub fn main_menu<'a>() -> Box<dyn Screen> {
     Box::new(Menu::new(
         Span::styled("Santorini", Style::default().add_modifier(Modifier::BOLD)).into(),
         vec![
-            (Spans::from("Start Game"), Box::new(|| Ok(new_app()))),
+            (
+                Spans::from("Start Game"),
+                Box::new(|| Ok(new_app(HumanPlayer::new(), HumanPlayer::new()))),
+            ),
             (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
         ],
     ))

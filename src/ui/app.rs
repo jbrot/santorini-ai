@@ -7,28 +7,26 @@ use tui::text::{Span, Spans};
 use tui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use tui::Frame;
 
-use crate::santorini::{
-    self, ActionResult, Build, Game, GameState, Move, NormalState, Pawn, PlaceOne, PlaceTwo,
-    Player, Point, Victory,
-};
+use crate::santorini::{self, Build, Game, GameState, Move, PlaceOne, PlaceTwo, Player, Victory};
 
 use crate::ui::{
     self, Back, BoardWidget, Screen, Term, UpdateError, PLAYER_ONE_TEXT_STYLE,
     PLAYER_TWO_TEXT_STYLE,
 };
 
+use crate::player::{FullPlayer, StepResult};
+
 pub struct App<T: GameState> {
     game: Game<T>,
-    cursor: Point,
-    intermediate_loc: Option<Point>,
+    player_one: Box<dyn FullPlayer>,
+    player_two: Box<dyn FullPlayer>,
 }
 
 impl<T: GameState> App<T> {
     fn current_player_name(&self) -> Span {
-        if self.game.player() == Player::PlayerOne {
-            Span::styled("Player One", PLAYER_ONE_TEXT_STYLE)
-        } else {
-            Span::styled("Player Two", PLAYER_TWO_TEXT_STYLE)
+        match self.game.player() {
+            Player::PlayerOne => Span::styled("Player One", PLAYER_ONE_TEXT_STYLE),
+            Player::PlayerTwo => Span::styled("Player Two", PLAYER_TWO_TEXT_STYLE),
         }
     }
 
@@ -91,444 +89,76 @@ impl<T: GameState> App<T> {
 
         segments[0]
     }
-
-    fn draw(
-        &self,
-        terminal: &mut Term,
-        widget: BoardWidget,
-        title: Spans,
-    ) -> Result<(), UpdateError> {
-        terminal.draw(|f| {
-            self.do_draw(f, widget, title);
-        })?;
-        Ok(())
-    }
-
-    fn move_into_list(self, list: Vec<Point>, filter: impl Fn(Point) -> bool) -> Self {
-        let mut best_pt = self.cursor;
-        let mut best_distance = i8::MAX;
-        for point in list {
-            if filter(point) {
-                let distance = point.taxicab(self.cursor);
-                if distance < best_distance {
-                    best_distance = distance;
-                    best_pt = point;
-                }
-            }
-        }
-        App {
-            cursor: best_pt,
-            ..self
-        }
-    }
-
-    fn move_up(self, options: Option<Vec<Point>>) -> Self {
-        match options {
-            Some(options) => {
-                let cursor_y = self.cursor.y();
-                self.move_into_list(options, |point| point.y() < cursor_y)
-            }
-            None => {
-                let cursor = Point::new_(self.cursor.x(), self.cursor.y() + (-1).into())
-                    .unwrap_or(self.cursor);
-                App { cursor, ..self }
-            }
-        }
-    }
-
-    fn move_down(self, options: Option<Vec<Point>>) -> Self {
-        match options {
-            Some(options) => {
-                let cursor_y = self.cursor.y();
-                self.move_into_list(options, |point| point.y() > cursor_y)
-            }
-            None => {
-                let cursor =
-                    Point::new_(self.cursor.x(), self.cursor.y() + 1.into()).unwrap_or(self.cursor);
-                App { cursor, ..self }
-            }
-        }
-    }
-
-    fn move_left(self, options: Option<Vec<Point>>) -> Self {
-        match options {
-            Some(options) => {
-                let cursor_x = self.cursor.x();
-                self.move_into_list(options, |point| point.x() < cursor_x)
-            }
-            None => {
-                let cursor = Point::new_(self.cursor.x() + (-1).into(), self.cursor.y())
-                    .unwrap_or(self.cursor);
-                App { cursor, ..self }
-            }
-        }
-    }
-
-    fn move_right(self, options: Option<Vec<Point>>) -> Self {
-        match options {
-            Some(options) => {
-                let cursor_x = self.cursor.x();
-                self.move_into_list(options, |point| point.x() > cursor_x)
-            }
-            None => {
-                let cursor =
-                    Point::new_(self.cursor.x() + 1.into(), self.cursor.y()).unwrap_or(self.cursor);
-                App { cursor, ..self }
-            }
-        }
-    }
 }
 
-impl<T: GameState + NormalState + Clone> App<T> {
-    fn pawn_at(&self, loc: Point) -> Option<Pawn<T>> {
-        for pawn in self.game.active_pawns().iter() {
-            if pawn.pos() == loc {
-                return Some(pawn.clone());
-            }
-        }
-        None
-    }
-}
-
-pub fn new_app() -> Box<dyn Screen> {
+pub fn new_app(
+    player_one: Box<dyn FullPlayer>,
+    player_two: Box<dyn FullPlayer>,
+) -> Box<dyn Screen> {
     Box::new(App {
         game: santorini::new_game(),
-        cursor: Point::new(0.into(), 0.into()),
-        intermediate_loc: None,
+        player_one,
+        player_two,
     })
 }
 
-impl Screen for App<PlaceOne> {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
-        self.draw(
-            terminal,
-            BoardWidget {
-                board: self.game.board(),
-                player: self.game.player(),
-                cursor: self.cursor,
+macro_rules! standard_state {
+    ($state:ty) => {
+        impl Screen for App<$state> {
+            fn update(
+                mut self: Box<Self>,
+                terminal: &mut Term,
+            ) -> Result<Box<dyn Screen>, UpdateError> {
+                let active_player = match self.game.player() {
+                    Player::PlayerOne => &self.player_one,
+                    Player::PlayerTwo => &self.player_two,
+                };
 
-                highlights: vec![],
-                player1_locs: self.intermediate_loc.iter().cloned().collect(),
-                player2_locs: vec![],
-            },
-            Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
-        )?;
+                terminal.draw(|f| {
+                    self.do_draw(
+                        f,
+                        active_player.render(&self.game),
+                        Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
+                    );
+                })?;
 
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if self.intermediate_loc.is_none() {
-                        Ok(self)
-                    } else {
-                        Ok(Box::new(App {
-                            intermediate_loc: None,
-                            ..*self
-                        }))
-                    }
+                let active_player = match self.game.player() {
+                    Player::PlayerOne => &mut self.player_one,
+                    Player::PlayerTwo => &mut self.player_two,
+                };
+
+                match active_player.step(&self.game)? {
+                    StepResult::NoMove => Ok(self),
+                    StepResult::PlaceTwo(game) => Ok(Box::new(App {
+                        game,
+                        player_one: self.player_one,
+                        player_two: self.player_two,
+                    })),
+                    StepResult::Move(game) => Ok(Box::new(App {
+                        game,
+                        player_one: self.player_one,
+                        player_two: self.player_two,
+                    })),
+                    StepResult::Build(game) => Ok(Box::new(App {
+                        game,
+                        player_one: self.player_one,
+                        player_two: self.player_two,
+                    })),
+                    StepResult::Victory(game) => Ok(Box::new(App {
+                        game,
+                        player_one: self.player_one,
+                        player_two: self.player_two,
+                    })),
                 }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    if let Some(pos1) = self.intermediate_loc {
-                        if pos1 != self.cursor {
-                            let position = self.game.can_place(pos1, self.cursor).unwrap();
-                            Ok(Box::new(App {
-                                game: self.game.apply(position),
-                                intermediate_loc: None,
-                                cursor: self.cursor,
-                            }))
-                        } else {
-                            Ok(self)
-                        }
-                    } else {
-                        Ok(Box::new(App {
-                            intermediate_loc: Some(self.cursor),
-                            ..*self
-                        }))
-                    }
-                }
-                Event::Key(Key::Up) | Event::Key(Key::Char('w')) => {
-                    Ok(Box::new(self.move_up(None)))
-                }
-                Event::Key(Key::Left) | Event::Key(Key::Char('a')) => {
-                    Ok(Box::new(self.move_left(None)))
-                }
-                Event::Key(Key::Down) | Event::Key(Key::Char('s')) => {
-                    Ok(Box::new(self.move_down(None)))
-                }
-                Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
-                    Ok(Box::new(self.move_right(None)))
-                }
-                _ => Ok(self),
             }
-        } else {
-            Ok(self)
         }
-    }
+    };
 }
 
-impl Screen for App<PlaceTwo> {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
-        self.draw(
-            terminal,
-            BoardWidget {
-                board: self.game.board(),
-                player: self.game.player(),
-                cursor: self.cursor,
-
-                highlights: vec![],
-                player1_locs: self.game.player1_locs().to_vec(),
-                player2_locs: self.intermediate_loc.iter().cloned().collect(),
-            },
-            Spans::from(vec![self.current_player_name(), Span::raw(" to place")]),
-        )?;
-
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if self.intermediate_loc.is_none() {
-                        Ok(self)
-                    } else {
-                        Ok(Box::new(App {
-                            intermediate_loc: None,
-                            ..*self
-                        }))
-                    }
-                }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    for pos in self.game.player1_locs().iter() {
-                        if *pos == self.cursor {
-                            return Ok(self);
-                        }
-                    }
-
-                    if let Some(pos1) = self.intermediate_loc {
-                        if pos1 != self.cursor {
-                            let position = self.game.can_place(pos1, self.cursor).unwrap();
-                            let new_game = self.game.apply(position);
-                            Ok(Box::new(App {
-                                cursor: new_game.active_pawns()[0].pos(),
-                                game: new_game,
-                                intermediate_loc: None,
-                            }))
-                        } else {
-                            Ok(self)
-                        }
-                    } else {
-                        Ok(Box::new(App {
-                            intermediate_loc: Some(self.cursor),
-                            ..*self
-                        }))
-                    }
-                }
-                Event::Key(Key::Up) | Event::Key(Key::Char('w')) => {
-                    Ok(Box::new(self.move_up(None)))
-                }
-                Event::Key(Key::Left) | Event::Key(Key::Char('a')) => {
-                    Ok(Box::new(self.move_left(None)))
-                }
-                Event::Key(Key::Down) | Event::Key(Key::Char('s')) => {
-                    Ok(Box::new(self.move_down(None)))
-                }
-                Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
-                    Ok(Box::new(self.move_right(None)))
-                }
-                _ => Ok(self),
-            }
-        } else {
-            Ok(self)
-        }
-    }
-}
-
-impl App<Move> {
-    fn active_pawn(&self) -> Option<Pawn<Move>> {
-        if let Some(loc) = self.intermediate_loc {
-            self.pawn_at(loc)
-        } else {
-            None
-        }
-    }
-}
-
-impl Screen for App<Move> {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
-        let highlights: Vec<Point> = if let Some(pawn) = self.active_pawn() {
-            pawn.actions().iter().map(|pair| pair.to()).collect()
-        } else {
-            self.game
-                .active_pawns()
-                .iter()
-                .map(|pawn| pawn.pos())
-                .collect()
-        };
-        self.draw(
-            terminal,
-            BoardWidget {
-                board: self.game.board(),
-                player: self.game.player(),
-                cursor: self.cursor,
-
-                highlights: highlights.clone(),
-                player1_locs: self
-                    .game
-                    .player1_pawns()
-                    .iter()
-                    .map(|pawn| pawn.pos())
-                    .collect(),
-                player2_locs: self
-                    .game
-                    .player2_pawns()
-                    .iter()
-                    .map(|pawn| pawn.pos())
-                    .collect(),
-            },
-            Spans::from(vec![self.current_player_name(), Span::raw(" to move")]),
-        )?;
-
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if let Some(pawn_loc) = self.intermediate_loc {
-                        Ok(Box::new(App {
-                            intermediate_loc: None,
-                            cursor: pawn_loc,
-                            ..*self
-                        }))
-                    } else {
-                        Ok(self)
-                    }
-                }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    if let Some(pawn) = self.active_pawn() {
-                        let action = pawn.can_move(self.cursor).unwrap();
-                        match self.game.apply(action) {
-                            ActionResult::Continue(game) => Ok(Box::new(App {
-                                cursor: game.active_pawn().actions()[0].loc(),
-                                game,
-                                intermediate_loc: None,
-                            })),
-                            ActionResult::Victory(game) => Ok(Box::new(App {
-                                cursor: self.cursor,
-                                game,
-                                intermediate_loc: None,
-                            })),
-                        }
-                    } else {
-                        let pawn = self.pawn_at(self.cursor).unwrap();
-                        if let Some(action) = pawn.actions().iter().next() {
-                            Ok(Box::new(App {
-                                intermediate_loc: Some(self.cursor),
-                                cursor: action.to(),
-                                ..*self
-                            }))
-                        } else {
-                            Ok(self)
-                        }
-                    }
-                }
-                Event::Key(Key::Up) | Event::Key(Key::Char('w')) => {
-                    Ok(Box::new(self.move_up(Some(highlights))))
-                }
-                Event::Key(Key::Left) | Event::Key(Key::Char('a')) => {
-                    Ok(Box::new(self.move_left(Some(highlights))))
-                }
-                Event::Key(Key::Down) | Event::Key(Key::Char('s')) => {
-                    Ok(Box::new(self.move_down(Some(highlights))))
-                }
-                Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
-                    Ok(Box::new(self.move_right(Some(highlights))))
-                }
-                _ => Ok(self),
-            }
-        } else {
-            Ok(self)
-        }
-    }
-}
-
-impl Screen for App<Build> {
-    fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
-        let highlights: Vec<Point> = self
-            .game
-            .active_pawn()
-            .actions()
-            .iter()
-            .map(|pair| pair.loc())
-            .collect();
-        self.draw(
-            terminal,
-            BoardWidget {
-                board: self.game.board(),
-                player: self.game.player(),
-                cursor: self.cursor,
-
-                highlights: highlights.clone(),
-                player1_locs: self
-                    .game
-                    .player1_pawns()
-                    .iter()
-                    .map(|pawn| pawn.pos())
-                    .collect(),
-                player2_locs: self
-                    .game
-                    .player2_pawns()
-                    .iter()
-                    .map(|pawn| pawn.pos())
-                    .collect(),
-            },
-            Spans::from(vec![self.current_player_name(), Span::raw(" to build")]),
-        )?;
-
-        if let Some(event) = io::stdin().events().next() {
-            match event? {
-                Event::Key(Key::Ctrl('c')) => Err(UpdateError::Shutdown),
-                Event::Key(Key::Char('q')) | Event::Key(Key::Esc) => {
-                    if let Some(pawn_loc) = self.intermediate_loc {
-                        Ok(Box::new(App {
-                            intermediate_loc: None,
-                            cursor: pawn_loc,
-                            ..*self
-                        }))
-                    } else {
-                        Ok(self)
-                    }
-                }
-                Event::Key(Key::Char('\n')) | Event::Key(Key::Char('e')) => {
-                    let action = self.game.active_pawn().can_build(self.cursor).unwrap();
-                    match self.game.apply(action) {
-                        ActionResult::Continue(game) => Ok(Box::new(App {
-                            cursor: game.active_pawns()[0].pos(),
-                            game,
-                            intermediate_loc: None,
-                        })),
-                        ActionResult::Victory(game) => Ok(Box::new(App {
-                            cursor: self.cursor,
-                            game,
-                            intermediate_loc: None,
-                        })),
-                    }
-                }
-                Event::Key(Key::Up) | Event::Key(Key::Char('w')) => {
-                    Ok(Box::new(self.move_up(Some(highlights))))
-                }
-                Event::Key(Key::Left) | Event::Key(Key::Char('a')) => {
-                    Ok(Box::new(self.move_left(Some(highlights))))
-                }
-                Event::Key(Key::Down) | Event::Key(Key::Char('s')) => {
-                    Ok(Box::new(self.move_down(Some(highlights))))
-                }
-                Event::Key(Key::Right) | Event::Key(Key::Char('d')) => {
-                    Ok(Box::new(self.move_right(Some(highlights))))
-                }
-                _ => Ok(self),
-            }
-        } else {
-            Ok(self)
-        }
-    }
-}
+standard_state!(PlaceOne);
+standard_state!(PlaceTwo);
+standard_state!(Move);
+standard_state!(Build);
 
 impl Screen for App<Victory> {
     fn update(self: Box<Self>, terminal: &mut Term) -> Result<Box<dyn Screen>, UpdateError> {
@@ -536,9 +166,9 @@ impl Screen for App<Victory> {
             let widget = BoardWidget {
                 board: self.game.board(),
                 player: self.game.player(),
-                cursor: self.cursor,
+                cursor: None,
 
-                highlights: vec![],
+                highlights: &vec![],
                 player1_locs: self
                     .game
                     .player1_pawns()

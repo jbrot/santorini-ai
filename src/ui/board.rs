@@ -10,12 +10,12 @@ use crate::ui::{
     PLAYER_TWO_CURSOR_STYLE, PLAYER_TWO_HIGHLIGHT_STYLE, PLAYER_TWO_STYLE,
 };
 
-pub struct BoardWidget {
+pub struct BoardWidget<'a> {
     pub board: Board,
 
     pub player: Player,
-    pub cursor: Point,
-    pub highlights: Vec<Point>,
+    pub cursor: Option<Point>,
+    pub highlights: &'a Vec<Point>,
 
     pub player1_locs: Vec<Point>,
     pub player2_locs: Vec<Point>,
@@ -25,7 +25,7 @@ const SQUARE_SIZE: u16 = 5;
 const BOARD_WIDGET_WIDTH: u16 = (BOARD_WIDTH.0 as u16) * SQUARE_SIZE;
 const BOARD_WIDGET_HEIGHT: u16 = (BOARD_HEIGHT.0 as u16) * SQUARE_SIZE;
 
-impl BoardWidget {
+impl<'a> BoardWidget<'a> {
     fn style(&self, point: Point) -> Option<Style> {
         for p in &self.player1_locs {
             if point == *p {
@@ -43,7 +43,7 @@ impl BoardWidget {
     }
 
     fn border_style(&self, point: Point) -> Option<Style> {
-        if point == self.cursor {
+        if Some(point) == self.cursor {
             if self.player == Player::PlayerOne {
                 return Some(PLAYER_ONE_CURSOR_STYLE);
             } else {
@@ -51,7 +51,7 @@ impl BoardWidget {
             }
         }
 
-        for p in &self.highlights {
+        for p in self.highlights {
             if *p == point {
                 if self.player == Player::PlayerOne {
                     return Some(PLAYER_ONE_HIGHLIGHT_STYLE);
@@ -65,7 +65,7 @@ impl BoardWidget {
     }
 }
 
-impl Widget for BoardWidget {
+impl<'a> Widget for BoardWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.width < BOARD_WIDGET_WIDTH || area.height < BOARD_WIDGET_HEIGHT {
             BoundsWidget {

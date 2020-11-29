@@ -4,6 +4,7 @@ use termion::raw::IntoRawMode;
 use tui::backend::TermionBackend;
 use tui::Terminal;
 
+mod player;
 mod santorini;
 mod ui;
 
