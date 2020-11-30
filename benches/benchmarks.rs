@@ -18,7 +18,12 @@ fn default_game() -> Game<Move> {
 
 fn criterion_benchmark(c: &mut Criterion) {
     let g = default_game();
-    c.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g)));
+
+    {
+        let mut group = c.benchmark_group("small");
+        group.sample_size(1000);
+        group.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g)));
+    }
 
     let n = mcts_ai::Node::new(g);
     c.bench_function("one step", |b| b.iter(|| {
