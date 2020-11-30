@@ -3,6 +3,10 @@ use cached::SizedCache;
 use rand::Rng;
 use std::cmp::Ordering;
 use std::mem;
+use std::time::{Duration, Instant};
+use std::io;
+use std::io::Write;
+use termion::input::TermRead;
 
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
@@ -11,104 +15,255 @@ use crate::santorini::{
 };
 use crate::ui::{BoardWidget, UpdateError};
 
-static EMPTY: Vec<Point> = Vec::new();
+/// Move for each player until the game ends according to the following policy:
+///   1. If there exists a winning action, take it.
+///   2. Otherwise, pick a random action.
+///
+/// Returns -1.0 if the active player in the provided game wins and 1.0 if the
+/// other player wins.
+///
+/// In other words, we return 1.0 if the player who moved to get to this state
+/// wins---which is what we want because in MCTS we consider Games from the
+/// perspective of the previous turn.
+fn simulate(mut game: Game<Move>) -> i32 {
+    let player = game.player();
 
-trait MCTS: Sized {
-    fn expand(&self) -> Vec<Self>;
-    fn simulate(&self) -> f32;
+    enum PossibleActions {
+        Victory,
+        Options (Vec<Game<Move>>),
+    }
+    
+    fn find_actions(game: Game<Move>) -> PossibleActions {
+        let mut options = Vec::new();
+        for mv in game.active_pawns().iter().map(|pawn| pawn.actions()).flatten() {
+            match game.apply(mv) {
+                ActionResult::Victory(_) => return PossibleActions::Victory,
+                ActionResult::Continue(game) => {
+                    for build in game.active_pawn().actions() {
+                        match game.apply(build) {
+                            ActionResult::Victory(_) => return PossibleActions::Victory,
+                            ActionResult::Continue(game) => options.push(game),
+                        }
+                    }
+                }
+            }
+        }
+        PossibleActions::Options(options)
+    }
+
+    loop {
+        match find_actions(game) {
+            PossibleActions::Victory => return if game.player() == player { -1 } else { 1 },
+            PossibleActions::Options(list) => {
+                let choice = rand::thread_rng().gen_range(0, list.len());
+                game = list[choice];
+            }
+        }
+    }
 }
 
-struct Node<T: MCTS> {
-    children: Option<Vec<Node<T>>>,
-    iterations: f32,
-    score: f32,
-    content: T,
+/// List all possible actions
+fn possible_actions(
+    game: Game<Move>,
+) -> Vec<((MoveAction, Option<BuildAction>), ActionResult<Move>)> {
+    game.active_pawns()
+        .iter()
+        .map(|pawn| pawn.actions())
+        .flatten()
+        .map(|mv| match game.apply(mv) {
+            ActionResult::Victory(game) => vec![((mv, None), ActionResult::Victory(game))],
+            ActionResult::Continue(game) => game
+                .active_pawn()
+                .actions()
+                .into_iter()
+                .map(|build| ((mv, Some(build)), game.apply(build)))
+                .collect(),
+        })
+        .flatten()
+        .collect()
 }
 
-impl<T: MCTS> Node<T> {
-    fn new(content: T) -> Node<T> {
-        let score = content.simulate();
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum NodeState {
+    Move(Game<Move>),
+    Victory(santorini::Player),
+}
+
+impl NodeState {
+    fn is_victory(&self) -> bool {
+        match self {
+            NodeState::Move(_) => false,
+            NodeState::Victory(_) => true,
+        }
+    }
+}
+
+struct Node {
+    children: Option<Vec<Node>>,
+    iterations: u32,
+    score: i32,
+    mv: Option<MoveAction>,
+    build: Option<BuildAction>,
+    game: NodeState,
+}
+
+impl Node {
+    fn new(game: Game<Move>) -> Node {
         Node {
             children: None,
-            iterations: 1.0,
-            score,
-            content,
+            iterations: 1,
+            score: simulate(game),
+            mv: None,
+            build: None,
+            game: NodeState::Move(game),
         }
     }
 
-    fn expand(&mut self) -> (f32, f32) {
+    fn expand(&mut self) -> (u32, i32) {
         assert!(self.children.is_none(), "Node has already been expanded!");
-        let mut children = Vec::new();
-        let mut new_scores: f32 = 0.0;
-        for child in self.content.expand() {
-            let node = Node::new(child);
-            self.iterations += 1.0;
-            self.score += node.score;
-            new_scores += node.score;
-            children.push(node);
+
+        if let NodeState::Move(game) = self.game {
+            let mut children = Vec::new();
+            let mut new_scores: i32 = 0;
+            for ((mv, build), result) in possible_actions(game) {
+                let node_state;
+                let score;
+                match result {
+                    ActionResult::Victory(won_game) => {
+                        node_state = NodeState::Victory(won_game.player());
+                        score = 1;
+                    },
+                    ActionResult::Continue(game) => {
+                        node_state = NodeState::Move(game);
+                        score = simulate(game);
+                    },
+                }
+                let node = Node {
+                    children: None,
+                    iterations: 1,
+                    score,
+                    mv: Some(mv),
+                    build,
+                    game: node_state,
+                };
+                children.push(node);
+                new_scores += -1 * score;
+            }
+
+            let new_nodes = children.len() as u32;
+            self.score += new_scores;
+            self.iterations += new_nodes;
+            self.children = Some(children);
+
+            (new_nodes, new_scores)
+        } else {
+            panic!("Tried to expand terminal node!");
         }
-        let res = (children.len() as f32, new_scores);
-        self.children = Some(children);
-        res
     }
 
     fn choose_child(&self) -> usize {
         assert!(self.children.is_some(), "Node hasn't been expanded!");
         let children = self.children.as_ref().unwrap();
 
-        let mut weights: Vec<f32> = Vec::new();
-        let mut total_weight: f32 = 0.0;
-
         // UCB1 algorithm for choosing a child (multi-arm bandit)
-        for child in children {
-            let avg_value = child.score / child.iterations;
+        let mut best_index = None;
+        let mut best_weight = None;
+        for (index, child) in children.iter().enumerate() {
+            let avg_value = (child.score as f64) / (child.iterations as f64);
+            // Rescale to be between 0 and 1
+            let avg_value = (1.0 + avg_value) / 2.0;
 
-            let augment = 2.0 * f32::ln(self.iterations);
-            let augment = augment / child.iterations;
-            let augment = f32::sqrt(augment);
+            let augment = 2.0 * f64::ln(self.iterations as f64);
+            let augment = augment / (child.iterations as f64);
+            let augment = f64::sqrt(augment);
 
             let weight = avg_value + augment;
-            weights.push(weight);
-            total_weight += weight;
-        }
-
-        let mut chosen: f32 = rand::thread_rng().gen::<f32>() * total_weight;
-        for (index, weight) in weights.iter().enumerate() {
-            if chosen < *weight {
-                return index;
-            } else {
-                chosen -= weight;
+            match best_weight {
+                None => {
+                    best_weight = Some(weight);
+                    best_index = Some(index);
+                },
+                Some(best) => if weight > best {
+                    best_weight = Some(weight);
+                    best_index = Some(index);
+                }
             }
         }
 
-        panic!("Choice algorithm failed!");
+        best_index.expect("No children!")
     }
 
-    fn step(&mut self) -> (f32, f32) {
+    fn step(&mut self) -> (u32, i32) {
+        if self.game.is_victory() {
+            return (1, 1);
+        }
+
         match self.children {
             None => self.expand(),
             Some(_) => {
-                let child_index = self.choose_child();
-                let (count, delta) = self.children.as_mut().unwrap()[child_index].expand();
+                let idx = self.choose_child();
+                let (count, delta) = self.children.as_mut().unwrap()[idx].step();
                 self.iterations += count;
-                self.score += delta;
-                (count, delta)
+                self.score -= delta;
+                (count, -delta)
             }
         }
     }
 }
 
+static EMPTY: Vec<Point> = Vec::new();
+
 pub struct MCTSAI {
-    mv: Option<MoveAction>,
-    build: Option<BuildAction>,
+    node: Option<Node>,
 }
 
 impl MCTSAI {
     pub fn new() -> Box<dyn FullPlayer> {
         Box::new(MCTSAI {
-            mv: None,
-            build: None,
+            node: None,
         })
+    }
+
+    pub fn simulate(&mut self, budget: Duration) {
+        let mut node = mem::replace(&mut self.node, None).expect("Missing root node!");
+        let start = Instant::now();
+        loop {
+            for _ in 0..10 {
+                node.step();
+            }
+
+            if Instant::now().duration_since(start) > budget {
+                let children = node.children.as_ref().expect("Missing children");
+                let mut best_score = children[0].score as f64 / children[0].iterations as f64;
+                let mut best_score_idx = 0;
+                let mut most_visits = children[0].iterations;
+                let mut most_visits_idx = 0;
+
+                for (index, child) in children.iter().enumerate() {
+                    if child.game.is_victory() {
+                        best_score_idx = index;
+                        most_visits_idx = index;
+                        break;
+                    }
+
+                    let score = child.score as f64 / child.iterations as f64;
+                    if score > best_score {
+                        best_score = score;
+                        best_score_idx = index;
+                    }
+
+                    if child.iterations > most_visits {
+                        most_visits = child.iterations;
+                        most_visits_idx = index;
+                    }
+                }
+
+                if best_score_idx == most_visits_idx {
+                    self.node = Some(node.children.unwrap().into_iter().nth(best_score_idx).unwrap());
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -132,143 +287,7 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
     }
 }
 
-fn possible_actions(
-    game: &Game<Move>,
-) -> Vec<((MoveAction, Option<BuildAction>), ActionResult<Move>)> {
-    game.clone()
-        .active_pawns()
-        .iter()
-        .map(|pawn| pawn.actions())
-        .flatten()
-        .map(|mv| match game.clone().apply(mv.clone()) {
-            ActionResult::Victory(game) => vec![((mv, None), ActionResult::Victory(game))],
-            ActionResult::Continue(game) => game
-                .active_pawn()
-                .actions()
-                .into_iter()
-                .map(|build| ((mv.clone(), Some(build.clone())), game.clone().apply(build)))
-                .collect(),
-        })
-        .flatten()
-        .collect()
-}
-
-fn height_score(height: CoordLevel) -> f64 {
-    match height {
-        CoordLevel::Ground => 0.0,
-        CoordLevel::One => 0.3,
-        CoordLevel::Two => 0.8,
-        CoordLevel::Three => 1.0,
-        CoordLevel::Capped => 0.0,
-    }
-}
-
-fn player_score(game: &Game<Move>, player: santorini::Player) -> f64 {
-    let pawn_score: f64 = game
-        .player_pawns(player)
-        .iter()
-        .map(|pawn| height_score(game.board().level_at(pawn.pos())))
-        .sum();
-    let pawn_score = pawn_score / 2.0;
-
-    let move_scores: Vec<f64> = game
-        .player_pawns(player)
-        .iter()
-        .map(|pawn| {
-            pawn.neighbors()
-                .into_iter()
-                .map(|loc| height_score(game.board().level_at(loc)))
-        })
-        .flatten()
-        .collect();
-    let move_sum: f64 = move_scores.iter().sum();
-    let move_score: f64 = move_sum / (move_scores.len() as f64);
-
-    pawn_score * 0.7 + move_score * 0.3
-}
-
-fn diff_score(game: &Game<Move>) -> f64 {
-    let s1 = player_score(game, game.player());
-    let s2 = player_score(game, game.player().other());
-    s1 - s2
-}
-
-fn dist_score(game: &Game<Move>) -> f64 {
-    let mut max_dist = 0;
-    for p1 in game.active_pawns().iter() {
-        for p2 in game.inactive_pawns().iter() {
-            max_dist = i8::max(max_dist, p1.pos().distance(p2.pos()));
-        }
-    }
-    let dist_score = 1.0 - (max_dist as f64) / 5.0;
-    dist_score * dist_score
-}
-
-fn score_recurse(action: &ActionResult<Move>, active_player: bool, depth: u8) -> f64 {
-    match action {
-        ActionResult::Victory(_) => {
-            if active_player {
-                1.0
-            } else {
-                -1.0
-            }
-        }
-        ActionResult::Continue(game) => {
-            if depth == 0 {
-                if active_player {
-                    0.3 * dist_score(game) - 0.7 * diff_score(game)
-                } else {
-                    0.3 * dist_score(game) + 0.7 * diff_score(game)
-                }
-            } else {
-                let scores = possible_actions(game)
-                    .into_iter()
-                    .map(|(_, action)| score_recurse(&action, !active_player, depth - 1));
-                if active_player {
-                    let mut min = f64::MAX;
-                    for score in scores {
-                        if score == -1.0 {
-                            return -1.0;
-                        }
-                        min = f64::min(min, score);
-                    }
-                    min
-                } else {
-                    let mut max = f64::MIN;
-                    for score in scores {
-                        if score == 1.0 {
-                            return 1.0;
-                        }
-                        max = f64::max(max, score);
-                    }
-                    max
-                }
-            }
-        }
-    }
-}
-
-#[cached(
-    type = "SizedCache<ActionResult<Move>, f64>",
-    create = "{ SizedCache::with_size(128) }",
-    convert = "{ action.clone() }"
-)]
-fn score(action: &ActionResult<Move>) -> f64 {
-    score_recurse(action, true, 2)
-}
-
-fn choose_action(game: &Game<Move>) -> (MoveAction, Option<BuildAction>) {
-    possible_actions(game)
-        .into_iter()
-        .max_by(|a, b| {
-            score(&a.1)
-                .partial_cmp(&score(&b.1))
-                .unwrap_or(Ordering::Equal)
-        })
-        .expect("No good moves found!")
-        .0
-}
-
+// TODO: Add support for placement to the tree
 fn random_pt() -> Point {
     let mut rng = rand::thread_rng();
     let x: i8 = rng.gen_range(1, santorini::BOARD_WIDTH.0 - 1);
@@ -327,9 +346,23 @@ impl Player<PlaceTwo> for MCTSAI {
 }
 
 impl Player<Move> for MCTSAI {
-    fn prepare(&mut self, _: &Game<Move>) {
-        self.mv = None;
-        self.build = None;
+    fn prepare(&mut self, game: &Game<Move>) {
+        let current = mem::replace(&mut self.node, None);
+        if let Some(node) = current {
+            let mut found = false;
+            for child in node.children.expect("Unexpanded root node!") {
+                if child.game == NodeState::Move(*game) {
+                    self.node = Some(child);
+                    found = true;
+                    break;
+                }
+            }
+            assert!(found, "Tree reset!");
+        }
+
+        if self.node.is_none() {
+            self.node = Some(Node::new(*game));
+        }
     }
 
     fn render(&self, game: &Game<Move>) -> BoardWidget {
@@ -337,13 +370,25 @@ impl Player<Move> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<Move>) -> Result<StepResult, UpdateError> {
-        if let None = self.mv {
-            let (mv, build) = choose_action(game);
-            self.mv = Some(mv);
-            self.build = build;
+        if self.node.as_ref().expect("Missing node!").game == NodeState::Move(*game) {
+            self.simulate(Duration::from_secs(5));
+
+            // let mut file = std::fs::OpenOptions::new()
+            //     .create(true)
+            //     .append(true)
+            //     .open("mcts.log")
+            //     .unwrap();
+
+            //     writeln!(file, "{}: Visits: {} Score: {} Move: {:?} Build: {:?}", index, child.iterations, child.score, child.mv.map(|ma| ma.to()), child.build.map(|ba| ba.loc()));
+
+            // writeln!(file, "Choosing: {}", best_child);
+            // writeln!(file, "");
+
+            // writeln!(file, "Chosen: Move: {:?} Build: {:?}", self.node.as_ref().unwrap().mv, self.node.as_ref().unwrap().build);
+            // writeln!(file, "");
         }
 
-        let action = mem::replace(&mut self.mv, None).expect("No move selected!");
+        let action = self.node.as_ref().expect("Missing node!").mv.expect("Missing move action!");
         match game.clone().apply(action) {
             ActionResult::Continue(game) => Ok(StepResult::Build(game)),
             ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
@@ -359,7 +404,7 @@ impl Player<Build> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<Build>) -> Result<StepResult, UpdateError> {
-        let action = mem::replace(&mut self.build, None).expect("No build selected!");
+        let action = self.node.as_ref().expect("Missing node!").build.expect("Missing build action!");
         match game.clone().apply(action) {
             ActionResult::Continue(game) => Ok(StepResult::Move(game)),
             ActionResult::Victory(game) => Ok(StepResult::Victory(game)),

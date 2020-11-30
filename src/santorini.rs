@@ -255,7 +255,7 @@ pub trait NormalState {
     fn player_locs(&self, player: Player) -> [Point; 2];
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Game<S: GameState> {
     state: S,
     board: Board,
@@ -334,7 +334,7 @@ impl<S: GameState + NormalState> Game<S> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Pawn<'a, S: GameState> {
     game: &'a Game<S>,
     pos: Point,
@@ -390,7 +390,7 @@ impl NormalState for Victory {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum ActionResult<T: GameState> {
     Continue(Game<T>),
     Victory(Game<Victory>),
@@ -429,7 +429,7 @@ impl NormalState for Move {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct MoveAction {
     from: Point,
     to: Point,
@@ -468,7 +468,7 @@ impl<'a> Pawn<'a, Move> {
         Some(MoveAction {
             from: self.pos,
             to,
-            game: self.game.clone(),
+            game: *self.game,
         })
     }
 
@@ -544,7 +544,7 @@ impl NormalState for Build {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct BuildAction {
     loc: Point,
     game: Game<Build>,
@@ -564,7 +564,7 @@ impl<'a> Pawn<'a, Build> {
         {
             Some(BuildAction {
                 loc,
-                game: self.game.clone(),
+                game: *self.game,
             })
         } else {
             None
@@ -633,7 +633,7 @@ impl Game<Build> {
 
 // Placement
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PlaceAction<T: GameState> {
     pos1: Point,
     pos2: Point,
@@ -660,7 +660,7 @@ impl Game<PlaceOne> {
             Some(PlaceAction {
                 pos1,
                 pos2,
-                game: self.clone(),
+                game: *self,
             })
         } else {
             None
@@ -707,7 +707,7 @@ impl Game<PlaceTwo> {
             Some(PlaceAction {
                 pos1,
                 pos2,
-                game: self.clone(),
+                game: *self,
             })
         } else {
             None
@@ -903,59 +903,59 @@ mod game_tests {
             MoveAction {
                 from: pt1,
                 to: Point::new(1.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt1,
                 to: Point::new(0.into(), 1.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt1,
                 to: Point::new(1.into(), 1.into()),
-                game: g.clone(),
+                game: g,
             },
         ];
         let moves2 = [
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(3.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 1.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 1.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 2.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(3.into(), 2.into()),
-                game: g.clone(),
+                game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 2.into()),
-                game: g.clone(),
+                game: g,
             },
         ];
 
@@ -989,23 +989,23 @@ mod game_tests {
         let build1 = [
             BuildAction {
                 loc: Point::new(0.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 0.into()),
-                game: g.clone(),
+                game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 1.into()),
-                game: g.clone(),
+                game: g,
             },
             BuildAction {
                 loc: Point::new(0.into(), 2.into()),
-                game: g.clone(),
+                game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 2.into()),
-                game: g.clone(),
+                game: g,
             },
         ];
 
