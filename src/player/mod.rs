@@ -3,6 +3,7 @@ use crate::ui::{BoardWidget, UpdateError};
 
 mod heuristic_ai;
 mod human;
+mod mcts_ai;
 mod random_ai;
 
 pub use heuristic_ai::HeuristicAI;
