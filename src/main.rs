@@ -4,11 +4,7 @@ use termion::raw::IntoRawMode;
 use tui::backend::TermionBackend;
 use tui::Terminal;
 
-mod player;
-mod santorini;
-mod ui;
-
-use ui::UpdateError;
+use santorini_ai::ui::{self, UpdateError};
 
 fn main() -> Result<(), UpdateError> {
     let stdout = MouseTerminal::from(io::stdout().into_raw_mode()?);

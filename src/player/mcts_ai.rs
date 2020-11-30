@@ -1,16 +1,12 @@
-use cached::proc_macro::cached;
-use cached::SizedCache;
 use rand::Rng;
-use std::cmp::Ordering;
 use std::mem;
 use std::time::{Duration, Instant};
 use std::io;
 use std::io::Write;
-use termion::input::TermRead;
 
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
-    self, ActionResult, Build, BuildAction, CoordLevel, Game, GameState, Move, MoveAction,
+    self, ActionResult, Build, BuildAction, Game, GameState, Move, MoveAction,
     NormalState, PlaceOne, PlaceTwo, Point,
 };
 use crate::ui::{BoardWidget, UpdateError};
@@ -25,7 +21,7 @@ use crate::ui::{BoardWidget, UpdateError};
 /// In other words, we return 1.0 if the player who moved to get to this state
 /// wins---which is what we want because in MCTS we consider Games from the
 /// perspective of the previous turn.
-fn simulate(mut game: Game<Move>) -> i32 {
+pub fn simulate(mut game: Game<Move>) -> i32 {
     let player = game.player();
 
     enum PossibleActions {
@@ -98,7 +94,8 @@ impl NodeState {
     }
 }
 
-struct Node {
+#[derive(Clone)]
+pub struct Node {
     children: Option<Vec<Node>>,
     iterations: u32,
     score: i32,
@@ -108,7 +105,7 @@ struct Node {
 }
 
 impl Node {
-    fn new(game: Game<Move>) -> Node {
+    pub fn new(game: Game<Move>) -> Node {
         Node {
             children: None,
             iterations: 1,
@@ -193,7 +190,7 @@ impl Node {
         best_index.expect("No children!")
     }
 
-    fn step(&mut self) -> (u32, i32) {
+    pub fn step(&mut self) -> (u32, i32) {
         if self.game.is_victory() {
             return (1, 1);
         }
