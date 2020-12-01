@@ -110,7 +110,7 @@ impl<'a> Widget for BoardWidget<'a> {
                 buf.set_string(
                     area.left() + (area.width / 2),
                     area.top() + (area.height / 2),
-                    format!("{}", self.board.level_at(point).height()),
+                    format!("{}", i8::from(self.board.level_at(point))),
                     Style::default(),
                 );
             }

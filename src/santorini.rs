@@ -1,6 +1,6 @@
 use derive_more::{Add, Display, From};
 
-use std::ops::{Deref, Sub};
+use std::ops::Deref;
 use std::slice::Iter;
 use std::iter::Iterator;
 
@@ -122,9 +122,22 @@ pub enum CoordLevel {
     Capped,
 }
 
-impl CoordLevel {
-    pub fn height(self) -> i8 {
-        match self {
+impl From<i8> for CoordLevel {
+    fn from(val: i8) -> CoordLevel {
+        match val {
+            0 => CoordLevel::Ground,
+            1 => CoordLevel::One,
+            2 => CoordLevel::Two,
+            3 => CoordLevel::Three,
+            4 => CoordLevel::Capped,
+            _ => panic!("Invalid coord level value: {}", val),
+        }
+    }
+}
+
+impl From<CoordLevel> for i8 {
+    fn from(val: CoordLevel) -> i8 {
+        match val {
             CoordLevel::Ground => 0,
             CoordLevel::One => 1,
             CoordLevel::Two => 2,
@@ -134,13 +147,18 @@ impl CoordLevel {
     }
 }
 
-impl Sub for CoordLevel {
-    type Output = i8;
-
-    fn sub(self, other: Self) -> Self::Output {
-        self.height() - other.height()
+impl Ord for CoordLevel {
+    fn cmp(&self, other: &CoordLevel) -> std::cmp::Ordering {
+        i8::from(*self).cmp(&i8::from(*other))
     }
 }
+
+impl PartialOrd for CoordLevel {
+    fn partial_cmp(&self, other: &CoordLevel) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Board {
@@ -244,6 +262,18 @@ mod board_tests {
     }
 }
 
+/// A CompositeBoard is a board where the tiles occupied by pawns
+/// have been capped, allowing for quicker checking of valid moves
+struct CompositeBoard {
+    board: Board,
+}
+
+impl CompositeBoard {
+    fn check(&self, loc: Point, max_height: CoordLevel) -> bool {
+        self.board.level_at(loc) <= max_height 
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Player {
     PlayerOne,
@@ -296,20 +326,16 @@ pub fn new_game() -> Game<PlaceOne> {
 }
 
 impl<S: GameState + NormalState> Game<S> {
-    pub fn is_open(&self, loc: Point) -> bool {
-        if self.board.level_at(loc) == CoordLevel::Capped {
-            return false;
-        }
+    fn composite_board(&self) -> CompositeBoard {
+        let mut board = self.board;
 
         for player in Player::iter() {
-            for pos in self.state.player_locs(*player).iter() {
-                if *pos == loc {
-                    return false;
-                }
+            for loc in &self.state.player_locs(*player) {
+                board.cap(*loc);
             }
         }
 
-        true
+        CompositeBoard { board }
     }
 
     pub fn player_pawns(&self, player: Player) -> [Pawn<S>; 2] {
@@ -463,31 +489,13 @@ impl MoveAction {
     }
 }
 
-struct CanMove {
-    board: Board,
-    level_limit: i8,
-}
-
-impl CanMove {
-    fn check(&self, loc: Point) -> bool {
-        self.board.level_at(loc).height() < self.level_limit
-    }
-}
-
 impl<'a> Pawn<'a, Move> {
-    fn make_can_move(&self) -> CanMove {
-        let mut board = self.game.board;
-        let level_limit = i8::min(board.level_at(self.pos).height() + 2, CoordLevel::Capped.height());
-
-        for player in Player::iter() {
-            for loc in &self.game.state.player_locs(*player) {
-                board.cap(*loc);
-            }
-        }
-
-        CanMove {
-            board,
-            level_limit,
+    fn level_limit(&self) -> CoordLevel {
+        match self.game.board.level_at(self.pos) {
+            CoordLevel::Ground => CoordLevel::One,
+            CoordLevel::One => CoordLevel::Two,
+            CoordLevel::Two => CoordLevel::Three,
+            level => panic!("Pawn at unreachable height: {:?}", level),
         }
     }
 
@@ -500,7 +508,7 @@ impl<'a> Pawn<'a, Move> {
             return None;
         }
 
-        if !self.make_can_move().check(to) {
+        if !self.game.composite_board().check(to, self.level_limit()) {
             return None;
         }
 
@@ -512,14 +520,15 @@ impl<'a> Pawn<'a, Move> {
     }
 
     pub fn actions_iter<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
-        let active_player = self.player == self.game.player;
-        let can_move = self.make_can_move();
+        let limit = self.level_limit();
         let from = self.pos;
         let game = *self.game;
+        let composite = game.composite_board();
+        let active_player = self.player == self.game.player;
 
         self.neighbors()
             .filter(move |_| active_player)
-            .filter(move |to| can_move.check(*to))
+            .filter(move |to| composite.check(*to, limit))
             .map(move |to| MoveAction { from, to, game, })
     }
 
@@ -608,7 +617,7 @@ impl<'a> Pawn<'a, Build> {
     pub fn can_build(&self, loc: Point) -> Option<BuildAction> {
         if self.pos == self.game.state.active_loc
             && self.pos.distance(loc) == 1
-            && self.game.is_open(loc)
+            && self.game.composite_board().check(loc, CoordLevel::Three)
         {
             Some(BuildAction {
                 loc,
@@ -619,10 +628,14 @@ impl<'a> Pawn<'a, Build> {
         }
     }
 
-    pub fn actions(&self) -> Vec<BuildAction> {
+    pub fn actions(&self) -> impl Iterator<Item = BuildAction> {
+        let is_active_pawn = *self == self.game.active_pawn();
+        let game = *self.game;
+        let composite = game.composite_board();
         self.neighbors()
-            .filter_map(|loc| self.can_build(loc))
-            .collect()
+            .filter(move |_| is_active_pawn)
+            .filter(move |loc| composite.check(*loc, CoordLevel::Three))
+            .map(move |loc| BuildAction { loc, game })
     }
 }
 
@@ -1056,10 +1069,10 @@ mod game_tests {
             },
         ];
 
-        assert_eq!(pawn1.actions(), build1);
-        assert_eq!(pawn2.actions(), []);
-        assert_eq!(pawn3.actions(), []);
-        assert_eq!(pawn4.actions(), []);
+        assert_eq!(pawn1.actions().collect::<Vec<BuildAction>>(), build1);
+        assert_eq!(pawn2.actions().collect::<Vec<BuildAction>>(), []);
+        assert_eq!(pawn3.actions().collect::<Vec<BuildAction>>(), []);
+        assert_eq!(pawn4.actions().collect::<Vec<BuildAction>>(), []);
     }
 
     #[test]

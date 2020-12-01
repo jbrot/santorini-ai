@@ -260,7 +260,6 @@ impl Player<Build> for HumanPlayer {
         self.highlights = game
             .active_pawn()
             .actions()
-            .iter()
             .map(|build| build.loc())
             .collect();
         self.cursor = self.highlights[0];
