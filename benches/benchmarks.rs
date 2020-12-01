@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use santorini_ai::santorini::{self, Game, Point, Move};
 use santorini_ai::player::mcts_ai;
@@ -21,7 +21,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let mut group = c.benchmark_group("small");
-        group.sample_size(1000);
+        group.sample_size(500);
         group.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g)));
     }
 
@@ -33,7 +33,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }));
 
     let mut group = c.benchmark_group("large");
-    group.sample_size(10);
+    group.sample_size(20);
     group.bench_function("ten step", |b| b.iter(|| {
         let mut n2 = n.clone();
         for _ in 0..10 { n2.step(); }

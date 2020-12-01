@@ -2,6 +2,7 @@ use derive_more::{Add, Display, From};
 
 use std::ops::{Deref, Sub};
 use std::slice::Iter;
+use std::iter::Iterator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Add, Display, From)]
 pub struct Coord(pub i8);
@@ -167,6 +168,10 @@ impl Board {
             CoordLevel::Capped => panic!["Invalid build action!"],
         }
     }
+
+    fn cap(&mut self, loc: Point) {
+        self.grid[usize::from(loc.x())][usize::from(loc.y())] = CoordLevel::Capped;
+    }
 }
 
 #[cfg(test)]
@@ -211,6 +216,16 @@ mod board_tests {
         b.build(pt);
         assert_eq!(b.level_at(pt), CoordLevel::Three);
         b.build(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Capped);
+    }
+
+    #[test]
+    fn cap() {
+        let pt = Point::new(2.into(), 2.into());
+        let mut b = Board::new();
+
+        assert_eq!(b.level_at(pt), CoordLevel::Ground);
+        b.cap(pt);
         assert_eq!(b.level_at(pt), CoordLevel::Capped);
     }
 
@@ -446,7 +461,34 @@ impl MoveAction {
     }
 }
 
+struct CanMove {
+    board: Board,
+    level_limit: i8,
+}
+
+impl CanMove {
+    fn check(&self, loc: Point) -> bool {
+        self.board.level_at(loc).height() < self.level_limit
+    }
+}
+
 impl<'a> Pawn<'a, Move> {
+    fn make_can_move(&self) -> CanMove {
+        let mut board = self.game.board;
+        let level_limit = i8::min(board.level_at(self.pos).height() + 2, CoordLevel::Capped.height());
+
+        for player in Player::iter() {
+            for loc in &self.game.state.player_locs(*player) {
+                board.cap(*loc);
+            }
+        }
+
+        CanMove {
+            board,
+            level_limit,
+        }
+    }
+
     pub fn can_move(&self, to: Point) -> Option<MoveAction> {
         if self.player != self.game.player {
             return None;
@@ -456,12 +498,7 @@ impl<'a> Pawn<'a, Move> {
             return None;
         }
 
-        let board = &self.game.board;
-        if board.level_at(to).height() - board.level_at(self.pos).height() > 1 {
-            return None;
-        }
-
-        if !self.game.is_open(to) {
+        if !self.make_can_move().check(to) {
             return None;
         }
 
@@ -472,11 +509,21 @@ impl<'a> Pawn<'a, Move> {
         })
     }
 
-    pub fn actions(&self) -> Vec<MoveAction> {
+    pub fn actions_iter<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
+        let active_player = self.player == self.game.player;
+        let can_move = self.make_can_move();
+        let from = self.pos;
+        let game = *self.game;
+
         self.neighbors()
-            .iter()
-            .filter_map(|&to| self.can_move(to))
-            .collect()
+            .into_iter()
+            .filter(move |_| active_player)
+            .filter(move |to| can_move.check(*to))
+            .map(move |to| MoveAction { from, to, game, })
+    }
+
+    pub fn actions(&self) -> Vec<MoveAction> {
+        self.actions_iter().collect()
     }
 }
 
@@ -613,7 +660,7 @@ impl Game<Build> {
         if new_game
             .active_pawns()
             .iter()
-            .find(|pawn| pawn.actions().len() > 0)
+            .find_map(|pawn| pawn.actions_iter().next())
             .is_some()
         {
             ActionResult::Continue(new_game)
