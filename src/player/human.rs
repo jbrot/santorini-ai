@@ -241,10 +241,10 @@ impl Player<Move> for HumanPlayer {
                     };
                 } else {
                     let pawn = pawn_at(&game, self.cursor).unwrap();
-                    if let Some(action) = pawn.actions().iter().next() {
+                    if let Some(action) = pawn.actions().next() {
                         self.intermediate_loc = Some(self.cursor);
                         self.cursor = action.to();
-                        self.highlights = pawn.actions().iter().map(|pair| pair.to()).collect();
+                        self.highlights = pawn.actions().map(|pair| pair.to()).collect();
                     }
                 }
             }

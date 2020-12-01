@@ -519,7 +519,7 @@ impl<'a> Pawn<'a, Move> {
         })
     }
 
-    pub fn actions_iter<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
+    pub fn actions<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
         let limit = self.level_limit();
         let from = self.pos;
         let game = *self.game;
@@ -530,10 +530,6 @@ impl<'a> Pawn<'a, Move> {
             .filter(move |_| active_player)
             .filter(move |to| composite.check(*to, limit))
             .map(move |to| MoveAction { from, to, game, })
-    }
-
-    pub fn actions(&self) -> Vec<MoveAction> {
-        self.actions_iter().collect()
     }
 }
 
@@ -673,7 +669,7 @@ impl Game<Build> {
         if new_game
             .active_pawns()
             .iter()
-            .find_map(|pawn| pawn.actions_iter().next())
+            .find_map(|pawn| pawn.actions().next())
             .is_some()
         {
             ActionResult::Continue(new_game)
@@ -1019,10 +1015,10 @@ mod game_tests {
             },
         ];
 
-        assert_eq!(pawn1.actions(), moves1);
-        assert_eq!(pawn2.actions(), moves2);
-        assert_eq!(pawn3.actions(), []);
-        assert_eq!(pawn4.actions(), []);
+        assert_eq!(pawn1.actions().collect::<Vec<MoveAction>>(), moves1);
+        assert_eq!(pawn2.actions().collect::<Vec<MoveAction>>(), moves2);
+        assert_eq!(pawn3.actions().collect::<Vec<MoveAction>>(), []);
+        assert_eq!(pawn4.actions().collect::<Vec<MoveAction>>(), []);
     }
 
     #[test]

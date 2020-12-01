@@ -24,36 +24,39 @@ use crate::ui::{BoardWidget, UpdateError};
 pub fn simulate(mut game: Game<Move>) -> i32 {
     let player = game.player();
 
-    enum PossibleActions {
+    enum PossibleAction {
         Victory,
-        Options (Vec<Game<Move>>),
+        Continue (Game<Move>),
     }
     
-    fn find_actions(game: Game<Move>) -> PossibleActions {
-        let mut options = Vec::new();
+    fn find_action(game: Game<Move>) -> PossibleAction {
+        let mut choice = game;
+        let mut count = 0.0;
         for mv in game.active_pawns().iter().map(|pawn| pawn.actions()).flatten() {
             match game.apply(mv) {
-                ActionResult::Victory(_) => return PossibleActions::Victory,
+                ActionResult::Victory(_) => return PossibleAction::Victory,
                 ActionResult::Continue(game) => {
                     for build in game.active_pawn().actions() {
                         match game.apply(build) {
-                            ActionResult::Victory(_) => return PossibleActions::Victory,
-                            ActionResult::Continue(game) => options.push(game),
+                            ActionResult::Victory(_) => return PossibleAction::Victory,
+                            ActionResult::Continue(game) => {
+                                count += 1.0;
+                                if rand::thread_rng().gen::<f64>() < 1.0 / count {
+                                    choice = game;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        PossibleActions::Options(options)
+        PossibleAction::Continue(choice)
     }
 
     loop {
-        match find_actions(game) {
-            PossibleActions::Victory => return if game.player() == player { -1 } else { 1 },
-            PossibleActions::Options(list) => {
-                let choice = rand::thread_rng().gen_range(0, list.len());
-                game = list[choice];
-            }
+        match find_action(game) {
+            PossibleAction::Victory => return if game.player() == player { -1 } else { 1 },
+            PossibleAction::Continue(choice) => game = choice,
         }
     }
 }
@@ -71,7 +74,6 @@ fn possible_actions(
             ActionResult::Continue(game) => game
                 .active_pawn()
                 .actions()
-                .into_iter()
                 .map(|build| ((mv, Some(build)), game.apply(build)))
                 .collect(),
         })
