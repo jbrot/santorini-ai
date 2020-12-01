@@ -365,8 +365,8 @@ impl<'a, S: GameState> Pawn<'a, S> {
         self.player
     }
 
-    pub fn neighbors(&self) -> Vec<Point> {
-        let offsets = [
+    pub fn neighbors(&self) -> impl Iterator<Item = Point> {
+        static OFFSETS: [(i8, i8); 8] = [
             (-1, -1),
             (0, -1),
             (1, -1),
@@ -376,15 +376,17 @@ impl<'a, S: GameState> Pawn<'a, S> {
             (0, 1),
             (1, 1),
         ];
-        offsets
+
+        let sx = self.pos.x();
+        let sy = self.pos.y();
+        OFFSETS 
             .iter()
-            .filter_map(|(x, y)| {
+            .filter_map(move |(x, y)| {
                 Point::new_(
-                    self.pos.x() + Coord::from(*x),
-                    self.pos.y() + Coord::from(*y),
+                    sx + Coord::from(*x),
+                    sy + Coord::from(*y),
                 )
             })
-            .collect()
     }
 }
 
@@ -516,7 +518,6 @@ impl<'a> Pawn<'a, Move> {
         let game = *self.game;
 
         self.neighbors()
-            .into_iter()
             .filter(move |_| active_player)
             .filter(move |to| can_move.check(*to))
             .map(move |to| MoveAction { from, to, game, })
@@ -620,8 +621,7 @@ impl<'a> Pawn<'a, Build> {
 
     pub fn actions(&self) -> Vec<BuildAction> {
         self.neighbors()
-            .iter()
-            .filter_map(|&loc| self.can_build(loc))
+            .filter_map(|loc| self.can_build(loc))
             .collect()
     }
 }
@@ -924,10 +924,10 @@ mod game_tests {
             Point::new(4.into(), 2.into()),
         ];
 
-        assert_eq!(pawn1.neighbors(), neighbors1);
-        assert_eq!(pawn2.neighbors(), neighbors2);
-        assert_eq!(pawn3.neighbors(), neighbors3);
-        assert_eq!(pawn4.neighbors(), neighbors4);
+        assert_eq!(pawn1.neighbors().collect::<Vec<Point>>(), neighbors1);
+        assert_eq!(pawn2.neighbors().collect::<Vec<Point>>(), neighbors2);
+        assert_eq!(pawn3.neighbors().collect::<Vec<Point>>(), neighbors3);
+        assert_eq!(pawn4.neighbors().collect::<Vec<Point>>(), neighbors4);
     }
 
     #[test]
