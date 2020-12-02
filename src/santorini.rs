@@ -22,7 +22,8 @@ impl From<Coord> for usize {
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Point {
-    offset: i8,
+    word: i8,
+    nibble: i8,
 }
 
 pub const BOARD_WIDTH: Coord = Coord(5);
@@ -30,11 +31,13 @@ pub const BOARD_HEIGHT: Coord = Coord(5);
 
 impl Point {
     pub fn x(&self) -> Coord {
-        Coord::from(self.offset % BOARD_WIDTH.0)
+        let offset = self.word * 16 + self.nibble / 4;
+        Coord::from(offset % BOARD_WIDTH.0)
     }
 
     pub fn y(&self) -> Coord {
-        Coord::from(self.offset / BOARD_WIDTH.0)
+        let offset = self.word * 16 + self.nibble / 4;
+        Coord::from(offset / BOARD_WIDTH.0)
     }
 
     /// Compute the L\infty (supremum) distance between the points
@@ -68,12 +71,9 @@ impl Point {
         if x.0 >= BOARD_WIDTH.0 || x.0 < 0 || y.0 >= BOARD_HEIGHT.0 || y.0 < 0 {
             None
         } else {
-            Some(Point { offset: BOARD_WIDTH.0 * y.0 + x.0 })
+            let offset = BOARD_WIDTH.0 * y.0 + x.0;
+            Some(Point { word: offset / 16, nibble: 4 * (offset % 16), })
         }
-    }
-
-    fn offset(&self) -> i8 {
-        self.offset
     }
 }
 
@@ -87,6 +87,17 @@ mod point_tests {
         Point::new(Coord::from(4), Coord::from(4));
         Point::new_(Coord::from(3), Coord::from(1)).unwrap();
         Point::new_(Coord::from(2), Coord::from(0)).unwrap();
+    }
+
+    #[test]
+    fn x_y() {
+        for x in 0..5 {
+            for y in 0..5 {
+                let point = Point::new(Coord::from(x), Coord::from(y));
+                assert_eq!(point.x(), Coord::from(x));
+                assert_eq!(point.y(), Coord::from(y));
+            }
+        }
     }
 
     #[test]
@@ -176,10 +187,8 @@ impl Board {
     }
 
     pub fn level_at(&self, loc: Point) -> CoordLevel {
-        let off = loc.offset();
-        let data = self.grid[(off / 16) as usize];
-        let off = 4 * (off % 16);
-        let data = (data >> off) & 0xF;
+        let data = self.grid[loc.word as usize];
+        let data = (data >> loc.nibble) & 0xF;
         match data {
             0b0000 => CoordLevel::Ground,
             0b0001 => CoordLevel::One,
@@ -191,9 +200,7 @@ impl Board {
     }
 
     pub fn less_than_equals(&self, loc: Point, level: CoordLevel) -> bool {
-        let off = loc.offset();
-        let data = self.grid[(off / 16) as usize];
-        let off = 4 * (off % 16);
+        let data = self.grid[loc.word as usize];
         let mask = match level {
             CoordLevel::Ground => 0b1111,
             CoordLevel::One => 0b1110,
@@ -201,15 +208,13 @@ impl Board {
             CoordLevel::Three => 0b1000,
             CoordLevel::Capped => return true,
         };
-        let mask = mask << off;
+        let mask = mask << loc.nibble;
         return data & mask == 0;
     }
 
     fn build(&mut self, loc: Point) {
-        let off = loc.offset();
-        let data = &mut self.grid[(off / 16) as usize];
-        let off = 4 * (off % 16);
-        let level = (*data >> off) & 0xF;
+        let data = &mut self.grid[loc.word as usize];
+        let level = (*data >> loc.nibble) & 0xF;
         let mask = match level {
             0b0000 => 0b0001,
             0b0001 => 0b0011,
@@ -218,16 +223,14 @@ impl Board {
             0b1000 => panic!["Invalid build action!"],
             _ => panic!("Invalid entry at {:?}: {}", loc, data),
         };
-        let mask = mask << off;
+        let mask = mask << loc.nibble;
         *data ^= mask;
     }
 
     fn cap(&mut self, loc: Point) {
-        let off = loc.offset();
-        let data = &mut self.grid[(off / 16) as usize];
-        let off = 4 * (off % 16);
-        let mask1 = !(0xF << off);
-        let mask2 = 0b1000 << off;
+        let data = &mut self.grid[loc.word as usize];
+        let mask1 = !(0xF << loc.nibble);
+        let mask2 = 0b1000 << loc.nibble;
         *data &= mask1;
         *data |= mask2;
     }
@@ -485,7 +488,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
         ];
 
         const fn neighbors_table() -> [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] {
-            let mut array = [[(0, [Point{offset: 0}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
+            let mut array = [[(0, [Point{word: 0, nibble: 0}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
             let mut x = 0;
             while x < BOARD_WIDTH.0 {
                 let mut y = 0;
