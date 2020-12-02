@@ -65,12 +65,16 @@ impl Point {
     /// An alternate to Point::new which panics on out of bounds.
     ///
     /// Not sure what the naming convention is here.
-    pub fn new_(x: Coord, y: Coord) -> Option<Point> {
-        if x >= BOARD_WIDTH || x < Coord::from(0) || y >= BOARD_HEIGHT || y < Coord::from(0) {
+    pub const fn new_(x: Coord, y: Coord) -> Option<Point> {
+        if x.0 >= BOARD_WIDTH.0 || x.0 < 0 || y.0 >= BOARD_HEIGHT.0 || y.0 < 0 {
             None
         } else {
             Some(Point { x, y })
         }
+    }
+
+    fn offset(&self) -> i8 {
+        BOARD_WIDTH.0 * self.y.0 + self.x.0
     }
 }
 
@@ -162,33 +166,71 @@ impl PartialOrd for CoordLevel {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Board {
-    pub grid: [[CoordLevel; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize],
+    grid: [u64; 2],
 }
 
 impl Board {
     fn new() -> Board {
         Board {
-            grid: [[CoordLevel::Ground; BOARD_WIDTH.0 as usize]; BOARD_HEIGHT.0 as usize],
+            grid: [0; 2]
         }
     }
 
     pub fn level_at(&self, loc: Point) -> CoordLevel {
-        self.grid[usize::from(loc.x())][usize::from(loc.y())]
-    }
-
-    fn build(&mut self, loc: Point) {
-        let c = &mut self.grid[usize::from(loc.x())][usize::from(loc.y())];
-        match c {
-            CoordLevel::Ground => *c = CoordLevel::One,
-            CoordLevel::One => *c = CoordLevel::Two,
-            CoordLevel::Two => *c = CoordLevel::Three,
-            CoordLevel::Three => *c = CoordLevel::Capped,
-            CoordLevel::Capped => panic!["Invalid build action!"],
+        let off = loc.offset();
+        let data = self.grid[(off / 16) as usize];
+        let off = 4 * (off % 16);
+        let data = (data >> off) & 0xF;
+        match data {
+            0b0000 => CoordLevel::Ground,
+            0b0001 => CoordLevel::One,
+            0b0010 => CoordLevel::Two,
+            0b0100 => CoordLevel::Three,
+            0b1000 => CoordLevel::Capped,
+            _ => panic!("Invalid entry at {:?}: {}", loc, data),
         }
     }
 
+    pub fn less_than_equals(&self, loc: Point, level: CoordLevel) -> bool {
+        let off = loc.offset();
+        let data = self.grid[(off / 16) as usize];
+        let off = 4 * (off % 16);
+        let mask = match level {
+            CoordLevel::Ground => 0b1111,
+            CoordLevel::One => 0b1110,
+            CoordLevel::Two => 0b1100,
+            CoordLevel::Three => 0b1000,
+            CoordLevel::Capped => return true,
+        };
+        let mask = mask << off;
+        return data & mask == 0;
+    }
+
+    fn build(&mut self, loc: Point) {
+        let off = loc.offset();
+        let data = &mut self.grid[(off / 16) as usize];
+        let off = 4 * (off % 16);
+        let level = (*data >> off) & 0xF;
+        let mask = match level {
+            0b0000 => 0b0001,
+            0b0001 => 0b0011,
+            0b0010 => 0b0110,
+            0b0100 => 0b1100,
+            0b1000 => panic!["Invalid build action!"],
+            _ => panic!("Invalid entry at {:?}: {}", loc, data),
+        };
+        let mask = mask << off;
+        *data ^= mask;
+    }
+
     fn cap(&mut self, loc: Point) {
-        self.grid[usize::from(loc.x())][usize::from(loc.y())] = CoordLevel::Capped;
+        let off = loc.offset();
+        let data = &mut self.grid[(off / 16) as usize];
+        let off = 4 * (off % 16);
+        let mask1 = !(0xF << off);
+        let mask2 = 0b1000 << off;
+        *data &= mask1;
+        *data |= mask2;
     }
 }
 
@@ -238,16 +280,6 @@ mod board_tests {
     }
 
     #[test]
-    fn cap() {
-        let pt = Point::new(2.into(), 2.into());
-        let mut b = Board::new();
-
-        assert_eq!(b.level_at(pt), CoordLevel::Ground);
-        b.cap(pt);
-        assert_eq!(b.level_at(pt), CoordLevel::Capped);
-    }
-
-    #[test]
     #[should_panic]
     fn build_over() {
         let pt = Point::new(2.into(), 2.into());
@@ -260,6 +292,56 @@ mod board_tests {
         assert_eq!(b.level_at(pt), CoordLevel::Capped);
         b.build(pt);
     }
+
+    #[test]
+    fn cap() {
+        let pt = Point::new(2.into(), 2.into());
+        let mut b = Board::new();
+
+        assert_eq!(b.level_at(pt), CoordLevel::Ground);
+        b.cap(pt);
+        assert_eq!(b.level_at(pt), CoordLevel::Capped);
+    }
+
+    #[test]
+    fn less_than_equals() {
+        let pt = Point::new(2.into(), 2.into());
+        let mut b = Board::new();
+
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Ground), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::One), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Two), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Three), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Capped), true);
+
+        b.build(pt);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Ground), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::One), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Two), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Three), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Capped), true);
+
+        b.build(pt);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Ground), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::One), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Two), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Three), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Capped), true);
+
+        b.build(pt);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Ground), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::One), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Two), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Three), true);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Capped), true);
+
+        b.build(pt);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Ground), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::One), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Two), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Three), false);
+        assert_eq!(b.less_than_equals(pt, CoordLevel::Capped), true);
+    }
 }
 
 /// A CompositeBoard is a board where the tiles occupied by pawns
@@ -270,7 +352,7 @@ struct CompositeBoard {
 
 impl CompositeBoard {
     fn check(&self, loc: Point, max_height: CoordLevel) -> bool {
-        self.board.level_at(loc) <= max_height 
+        self.board.less_than_equals(loc, max_height)
     }
 }
 
@@ -392,7 +474,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
     }
 
     pub fn neighbors(&self) -> impl Iterator<Item = Point> {
-        static OFFSETS: [(i8, i8); 8] = [
+        const OFFSETS: [(i8, i8); 8] = [
             (-1, -1),
             (0, -1),
             (1, -1),
@@ -403,16 +485,39 @@ impl<'a, S: GameState> Pawn<'a, S> {
             (1, 1),
         ];
 
-        let sx = self.pos.x();
-        let sy = self.pos.y();
-        OFFSETS 
-            .iter()
-            .filter_map(move |(x, y)| {
-                Point::new_(
-                    sx + Coord::from(*x),
-                    sy + Coord::from(*y),
-                )
-            })
+        const fn neighbors_table() -> [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] {
+            let mut array = [[(0, [Point{x: Coord(0), y:Coord(0)}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
+            let mut x = 0;
+            while x < BOARD_WIDTH.0 {
+                let mut y = 0;
+                while y < BOARD_HEIGHT.0 {
+                    let mut count = 0;
+                    let mut index = 0;
+                    while index < 8 {
+                        let (dx, dy) = OFFSETS[index];
+                        match Point::new_(Coord(x + dx), Coord(y + dy)) {
+                            Some(point) => {
+                                array[x as usize][y as usize].1[count] = point;
+                                count += 1;
+                            },
+                            None => (),
+                        }
+                        array[x as usize][y as usize].0 = count;
+                        index += 1;
+                    }
+                    y += 1;
+                }
+                x += 1;
+            }
+            array
+        }
+
+        static LOOKUP_TABLE: [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] = neighbors_table();
+
+        let x: usize = self.pos.x().into();
+        let y: usize = self.pos.y().into();
+        let (len, data) = &LOOKUP_TABLE[x][y];
+        data[0..*len].iter().cloned()
     }
 }
 
