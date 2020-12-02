@@ -22,8 +22,7 @@ impl From<Coord> for usize {
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Point {
-    x: Coord,
-    y: Coord,
+    offset: i8,
 }
 
 pub const BOARD_WIDTH: Coord = Coord(5);
@@ -31,11 +30,11 @@ pub const BOARD_HEIGHT: Coord = Coord(5);
 
 impl Point {
     pub fn x(&self) -> Coord {
-        self.x
+        Coord::from(self.offset % BOARD_WIDTH.0)
     }
 
     pub fn y(&self) -> Coord {
-        self.y
+        Coord::from(self.offset / BOARD_WIDTH.0)
     }
 
     /// Compute the L\infty (supremum) distance between the points
@@ -69,12 +68,12 @@ impl Point {
         if x.0 >= BOARD_WIDTH.0 || x.0 < 0 || y.0 >= BOARD_HEIGHT.0 || y.0 < 0 {
             None
         } else {
-            Some(Point { x, y })
+            Some(Point { offset: BOARD_WIDTH.0 * y.0 + x.0 })
         }
     }
 
     fn offset(&self) -> i8 {
-        BOARD_WIDTH.0 * self.y.0 + self.x.0
+        self.offset
     }
 }
 
@@ -486,7 +485,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
         ];
 
         const fn neighbors_table() -> [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] {
-            let mut array = [[(0, [Point{x: Coord(0), y:Coord(0)}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
+            let mut array = [[(0, [Point{offset: 0}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
             let mut x = 0;
             while x < BOARD_WIDTH.0 {
                 let mut y = 0;
