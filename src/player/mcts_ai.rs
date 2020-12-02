@@ -1,7 +1,7 @@
+use rand::seq::SliceRandom;
 use rand::Rng;
 use std::mem;
 use std::time::{Duration, Instant};
-use std::io;
 use std::io::Write;
 
 use crate::player::{FullPlayer, Player, StepResult};
@@ -53,10 +53,45 @@ pub fn simulate(mut game: Game<Move>) -> i32 {
         PossibleAction::Continue(choice)
     }
 
+    let mut previous = game;
+
+    match find_action(game) {
+        PossibleAction::Victory => return if game.player() == player { -1 } else { 1 },
+        PossibleAction::Continue(choice) => game = choice,
+    }
+
     loop {
         match find_action(game) {
-            PossibleAction::Victory => return if game.player() == player { -1 } else { 1 },
-            PossibleAction::Continue(choice) => game = choice,
+            PossibleAction::Continue(choice) => {
+                previous = game;
+                game = choice;
+            }
+            PossibleAction::Victory => {
+                // Back track to see if this could be avoided
+                let mut actions = possible_actions(previous);
+                &mut actions.shuffle(&mut rand::thread_rng());
+                let mut found = false;
+                for (_, result) in actions {
+                    // We know this can't be a winning move, otherwise we would have
+                    // already taken it instead of getting here.
+                    let new_game = result.unwrap();
+                    match find_action(new_game) {
+                        PossibleAction::Victory => (),
+                        PossibleAction::Continue(choice) => {
+                            // Found a blocking move
+                            previous = new_game;
+                            game = choice;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Legitimate win
+                if !found {
+                    return if game.player() == player { -1 } else { 1 }
+                }
+            }
         }
     }
 }
@@ -124,22 +159,26 @@ impl Node {
         if let NodeState::Move(game) = self.game {
             let mut children = Vec::new();
             let mut new_scores: i32 = 0;
+            let mut new_nodes: u32 = 0;
             for ((mv, build), result) in possible_actions(game) {
                 let node_state;
                 let score;
+                let iterations;
                 match result {
                     ActionResult::Victory(won_game) => {
                         node_state = NodeState::Victory(won_game.player());
-                        score = 1;
+                        score = 100;
+                        iterations = 100;
                     },
                     ActionResult::Continue(game) => {
                         node_state = NodeState::Move(game);
                         score = simulate(game);
+                        iterations = 1;
                     },
                 }
                 let node = Node {
                     children: None,
-                    iterations: 1,
+                    iterations,
                     score,
                     mv: Some(mv),
                     build,
@@ -147,9 +186,9 @@ impl Node {
                 };
                 children.push(node);
                 new_scores += -1 * score;
+                new_nodes += iterations;
             }
 
-            let new_nodes = children.len() as u32;
             self.score += new_scores;
             self.iterations += new_nodes;
             self.children = Some(children);
@@ -172,7 +211,7 @@ impl Node {
             // Rescale to be between 0 and 1
             let avg_value = (1.0 + avg_value) / 2.0;
 
-            let augment = 2.0 * f64::ln(self.iterations as f64);
+            let augment = 4.0 * f64::ln(self.iterations as f64);
             let augment = augment / (child.iterations as f64);
             let augment = f64::sqrt(augment);
 
@@ -225,13 +264,24 @@ impl MCTSAI {
 
     pub fn simulate(&mut self, budget: Duration) {
         let mut node = mem::replace(&mut self.node, None).expect("Missing root node!");
+        let mut ct = 0;
         let start = Instant::now();
         loop {
             for _ in 0..10 {
                 node.step();
             }
 
-            if Instant::now().duration_since(start) > budget {
+            ct += 10;
+
+            let elapsed = Instant::now().duration_since(start);
+            if elapsed > budget {
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("mcts.log")
+                    .unwrap();
+                writeln!(file, "Ran for {} steps in {:.2} seconds:", ct, elapsed.as_secs_f32());
+
                 let children = node.children.as_ref().expect("Missing children");
                 let mut best_score = children[0].score as f64 / children[0].iterations as f64;
                 let mut best_score_idx = 0;
@@ -239,6 +289,7 @@ impl MCTSAI {
                 let mut most_visits_idx = 0;
 
                 for (index, child) in children.iter().enumerate() {
+                    writeln!(file, "    {}: Visits: {} Score: {} Move: {:?} Build: {:?}", index, child.iterations, child.score, child.mv.map(|ma| ma.to()), child.build.map(|ba| ba.loc()));
                     if child.game.is_victory() {
                         best_score_idx = index;
                         most_visits_idx = index;
@@ -258,8 +309,13 @@ impl MCTSAI {
                 }
 
                 if best_score_idx == most_visits_idx {
-                    self.node = Some(node.children.unwrap().into_iter().nth(best_score_idx).unwrap());
+                    writeln!(file, "Choosing: {}", most_visits_idx);
+                    writeln!(file, "");
+                    self.node = Some(node.children.unwrap().into_iter().nth(most_visits_idx).unwrap());
                     return;
+                } else {
+                    writeln!(file, "Most visited: {} Best Score: {}", most_visits_idx, best_score_idx);
+                    writeln!(file, "Adding cycles to get convergence...");
                 }
             }
         }
