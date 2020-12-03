@@ -913,17 +913,80 @@ impl<'a> Pawn<'a, Build> {
     }
 
     pub fn actions(&self) -> impl Iterator<Item = BuildAction> {
-        let is_active_pawn = *self == self.game.active_pawn();
-        let game = *self.game;
-        let composite = game.composite_board();
-        self.neighbors()
-            .filter(move |_| is_active_pawn)
-            .filter(move |loc| composite.check(*loc, CoordLevel::Three))
-            .map(move |loc| BuildAction {
-                loc,
+        struct ActionsIterator {
+            board: u64,
+            offsets: u64,
+            action: BuildAction,
+        }
+
+        impl Iterator for ActionsIterator {
+            type Item = BuildAction;
+
+            fn next(&mut self) -> Option<BuildAction> {
+                loop {
+                    if self.offsets == 0 {
+                        return None;
+                    }
+
+                    let off = self.offsets & 0xFF;
+                    self.offsets = self.offsets >> 8;
+                    self.board = self.board >> off;
+                    self.action.loc.nibble += off as i8;
+                    if self.action.loc.nibble & 0b1000000 != 0 {
+                        self.action.loc.word = 1;
+                        self.action.loc.nibble &= !0b1000000;
+                    }
+
+                    if self.board & 0b1000 == 0 {
+                        break;
+                    }
+                }
+
+                Some(self.action)
+            }
+        }
+
+        if *self != self.game.active_pawn() {
+            return ActionsIterator {
+                board: 0,
+                offsets: 0,
+                action: BuildAction {
+                    loc: self.pos,
+                    #[cfg(debug_assertions)]
+                    game: *self.game,
+                }
+            };
+        }
+
+        let offsets = ACTION_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
+        let off: u64 = offsets & 0xFF;
+        let offsets = offsets & !0xFF;
+
+        let composite = self.game.composite_board();
+        let board;
+        if off >= 64 {
+            let off = off - 64;
+            board = composite.board.grid[1] >> off;
+        } else {
+            let board_a = composite.board.grid[0] >> off;
+            let board_b;
+            if off > 0 {
+                board_b = composite.board.grid[1] << (64 - off);
+            } else {
+                board_b = 0;
+            }
+            board = board_a | board_b;
+        }
+
+        ActionsIterator {
+            board,
+            offsets,
+            action: BuildAction {
+                loc: Point { word: 0, nibble: off as i8 },
                 #[cfg(debug_assertions)]
-                game
-            })
+                game: *self.game,
+            }
+        }
     }
 }
 

@@ -2,8 +2,6 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use std::mem;
 use std::time::{Duration, Instant};
-use std::io;
-use std::io::Write;
 
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
