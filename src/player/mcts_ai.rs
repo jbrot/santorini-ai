@@ -1,4 +1,5 @@
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
 use std::mem;
 use std::time::{Duration, Instant};
 use std::io;
@@ -21,7 +22,7 @@ use crate::ui::{BoardWidget, UpdateError};
 /// In other words, we return 1.0 if the player who moved to get to this state
 /// wins---which is what we want because in MCTS we consider Games from the
 /// perspective of the previous turn.
-pub fn simulate(mut game: Game<Move>) -> i32 {
+pub fn simulate<R: Rng>(mut game: Game<Move>, rng: &mut R) -> i32 {
     let player = game.player();
 
     enum PossibleAction {
@@ -29,7 +30,7 @@ pub fn simulate(mut game: Game<Move>) -> i32 {
         Continue (Game<Move>),
     }
     
-    fn find_action(game: Game<Move>) -> PossibleAction {
+    fn find_action<R: Rng>(game: Game<Move>, rng: &mut R) -> PossibleAction {
         let mut choice = game;
         let mut count = 0.0;
         for mv in game.active_pawns().iter().map(|pawn| pawn.actions()).flatten() {
@@ -41,7 +42,7 @@ pub fn simulate(mut game: Game<Move>) -> i32 {
                             ActionResult::Victory(_) => return PossibleAction::Victory,
                             ActionResult::Continue(game) => {
                                 count += 1.0;
-                                if rand::thread_rng().gen::<f64>() < 1.0 / count {
+                                if rng.gen::<f64>() < 1.0 / count {
                                     choice = game;
                                 }
                             }
@@ -54,7 +55,7 @@ pub fn simulate(mut game: Game<Move>) -> i32 {
     }
 
     loop {
-        match find_action(game) {
+        match find_action(game, rng) {
             PossibleAction::Victory => return if game.player() == player { -1 } else { 1 },
             PossibleAction::Continue(choice) => game = choice,
         }
@@ -107,18 +108,18 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(game: Game<Move>) -> Node {
+    pub fn new<R: Rng>(game: Game<Move>, rng: &mut R) -> Node {
         Node {
             children: None,
             iterations: 1,
-            score: simulate(game),
+            score: simulate(game, rng),
             mv: None,
             build: None,
             game: NodeState::Move(game),
         }
     }
 
-    fn expand(&mut self) -> (u32, i32) {
+    fn expand<R: Rng>(&mut self, rng: &mut R) -> (u32, i32) {
         assert!(self.children.is_none(), "Node has already been expanded!");
 
         if let NodeState::Move(game) = self.game {
@@ -134,7 +135,7 @@ impl Node {
                     },
                     ActionResult::Continue(game) => {
                         node_state = NodeState::Move(game);
-                        score = simulate(game);
+                        score = simulate(game, rng);
                     },
                 }
                 let node = Node {
@@ -192,16 +193,16 @@ impl Node {
         best_index.expect("No children!")
     }
 
-    pub fn step(&mut self) -> (u32, i32) {
+    pub fn step<R: Rng>(&mut self, rng: &mut R) -> (u32, i32) {
         if self.game.is_victory() {
             return (1, 1);
         }
 
         match self.children {
-            None => self.expand(),
+            None => self.expand(rng),
             Some(_) => {
                 let idx = self.choose_child();
-                let (count, delta) = self.children.as_mut().unwrap()[idx].step();
+                let (count, delta) = self.children.as_mut().unwrap()[idx].step(rng);
                 self.iterations += count;
                 self.score -= delta;
                 (count, -delta)
@@ -214,12 +215,14 @@ static EMPTY: Vec<Point> = Vec::new();
 
 pub struct MCTSAI {
     node: Option<Node>,
+    rng: SmallRng,
 }
 
 impl MCTSAI {
     pub fn new() -> Box<dyn FullPlayer> {
         Box::new(MCTSAI {
             node: None,
+            rng: SmallRng::from_entropy(),
         })
     }
 
@@ -228,7 +231,7 @@ impl MCTSAI {
         let start = Instant::now();
         loop {
             for _ in 0..10 {
-                node.step();
+                node.step(&mut self.rng);
             }
 
             if Instant::now().duration_since(start) > budget {
@@ -287,8 +290,7 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
 }
 
 // TODO: Add support for placement to the tree
-fn random_pt() -> Point {
-    let mut rng = rand::thread_rng();
+fn random_pt<R : Rng>(rng: &mut R) -> Point {
     let x: i8 = rng.gen_range(1, santorini::BOARD_WIDTH.0 - 1);
     let y: i8 = rng.gen_range(1, santorini::BOARD_HEIGHT.0 - 1);
     Point::new(x.into(), y.into())
@@ -310,8 +312,8 @@ impl Player<PlaceOne> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<PlaceOne>) -> Result<StepResult, UpdateError> {
-        let pt1 = random_pt();
-        let pt2 = random_pt();
+        let pt1 = random_pt(&mut self.rng);
+        let pt2 = random_pt(&mut self.rng);
         match game.can_place(pt1, pt2) {
             Some(action) => Ok(StepResult::PlaceTwo(game.clone().apply(action))),
             None => Ok(StepResult::NoMove),
@@ -335,8 +337,8 @@ impl Player<PlaceTwo> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<PlaceTwo>) -> Result<StepResult, UpdateError> {
-        let pt1 = random_pt();
-        let pt2 = random_pt();
+        let pt1 = random_pt(&mut self.rng);
+        let pt2 = random_pt(&mut self.rng);
         match game.can_place(pt1, pt2) {
             Some(action) => Ok(StepResult::Move(game.clone().apply(action))),
             None => Ok(StepResult::NoMove),
@@ -360,7 +362,7 @@ impl Player<Move> for MCTSAI {
         }
 
         if self.node.is_none() {
-            self.node = Some(Node::new(*game));
+            self.node = Some(Node::new(*game, &mut self.rng));
         }
     }
 

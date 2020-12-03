@@ -1,5 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
+use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
+
 use santorini_ai::santorini::{self, Game, Point, Move};
 use santorini_ai::player::mcts_ai;
 
@@ -18,17 +21,18 @@ fn default_game() -> Game<Move> {
 
 fn criterion_benchmark(c: &mut Criterion) {
     let g = default_game();
+    let mut rng = SmallRng::from_entropy();
 
     {
         let mut group = c.benchmark_group("small");
         group.sample_size(500);
-        group.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g)));
+        group.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g, &mut rng)));
     }
 
-    let n = mcts_ai::Node::new(g);
+    let n = mcts_ai::Node::new(g, &mut rng);
     c.bench_function("one step", |b| b.iter(|| {
         let mut n2 = n.clone();
-        n2.step();
+        n2.step(&mut rng);
         n2
     }));
 
@@ -36,7 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("ten step", |b| b.iter(|| {
         let mut n2 = n.clone();
-        for _ in 0..10 { n2.step(); }
+        for _ in 0..10 { n2.step(&mut rng); }
         n2
     }));
 }
