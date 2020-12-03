@@ -583,6 +583,7 @@ impl NormalState for Move {
 pub struct MoveAction {
     from: Point,
     to: Point,
+    #[cfg(debug_assertions)]
     game: Game<Move>,
 }
 
@@ -677,6 +678,7 @@ impl<'a> Pawn<'a, Move> {
         Some(MoveAction {
             from: self.pos,
             to,
+            #[cfg(debug_assertions)]
             game: *self.game,
         })
     }
@@ -691,29 +693,40 @@ impl<'a> Pawn<'a, Move> {
 
         let mut offsets = ACTION_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
         let off: u64 = offsets & 0xFF;
-        offsets = offsets & !0xFF;
+        offsets >>= 8;
 
         let composite = self.game.composite_board();
         let mut board;
         if off >= 64 {
             let off = off - 64;
             board = composite.board.grid[1] >> off;
+
+            if board & mask == 0 {
+                return true;
+            }
         } else {
             board = composite.board.grid[0] >> off;
+            if board & mask == 0 {
+                return true;
+            }
+
             if off > 0 {
                 board |= composite.board.grid[1] << (64 - off);
             }
         }
 
+        if offsets == 0 {
+            return false;
+        }
+
         loop {
             let off = offsets & 0xFF;
-            offsets >>= 8;
             board = board >> off;
-
             if board & mask == 0 {
                 return true;
             }
 
+            offsets >>= 8;
             if offsets == 0 {
                 return false;
             }
@@ -763,6 +776,7 @@ impl<'a> Pawn<'a, Move> {
                 action: MoveAction {
                     from: self.pos,
                     to: self.pos,
+                    #[cfg(debug_assertions)]
                     game: *self.game,
                 }
             };
@@ -802,6 +816,7 @@ impl<'a> Pawn<'a, Move> {
             action: MoveAction {
                 from: self.pos,
                 to: Point { word: 0, nibble: off as i8 },
+                #[cfg(debug_assertions)]
                 game: *self.game,
             }
         }
@@ -812,12 +827,8 @@ impl<'a> Pawn<'a, Move> {
 // with minimal differences
 impl Game<Move> {
     pub fn apply(self, action: MoveAction) -> ActionResult<Build> {
-        if action.game != self {
-            panic!(
-                "Game {:?} received action {:?} associated with a different game!",
-                self, action
-            );
-        }
+        #[cfg(debug_assertions)]
+        assert!(action.game == self, "Game {:?} received action {:?} associated with a different game!", self, action);
 
         let mut state = Build {
             player1_locs: self.state.player1_locs,
@@ -875,6 +886,7 @@ impl NormalState for Build {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct BuildAction {
     loc: Point,
+    #[cfg(debug_assertions)]
     game: Game<Build>,
 }
 
@@ -892,6 +904,7 @@ impl<'a> Pawn<'a, Build> {
         {
             Some(BuildAction {
                 loc,
+                #[cfg(debug_assertions)]
                 game: *self.game,
             })
         } else {
@@ -906,7 +919,11 @@ impl<'a> Pawn<'a, Build> {
         self.neighbors()
             .filter(move |_| is_active_pawn)
             .filter(move |loc| composite.check(*loc, CoordLevel::Three))
-            .map(move |loc| BuildAction { loc, game })
+            .map(move |loc| BuildAction {
+                loc,
+                #[cfg(debug_assertions)]
+                game
+            })
     }
 }
 
@@ -920,12 +937,8 @@ impl Game<Build> {
     }
 
     pub fn apply(self, action: BuildAction) -> ActionResult<Move> {
-        if action.game != self {
-            panic!(
-                "Game {:?} received action {:?} associated with a different game!",
-                self, action
-            );
-        }
+        #[cfg(debug_assertions)]
+        assert!(action.game == self, "Game {:?} received action {:?} associated with a different game!", self, action);
 
         let mut board = self.board;
         board.build(action.loc);
@@ -941,12 +954,8 @@ impl Game<Build> {
         // Note that after a move, there is always at least one valid build
         // location (the place the pawn moved from), so we just need to check
         // moves and not builds to determine a stalemate.
-        if new_game
-            .active_pawns()
-            .iter()
-            .find(|pawn| pawn.has_actions())
-            .is_some()
-        {
+        let pawns = new_game.active_pawns();
+        if pawns[0].has_actions() || pawns[1].has_actions() {
             ActionResult::Continue(new_game)
         } else {
             // New player can't move so the current player wins!
@@ -999,12 +1008,7 @@ impl Game<PlaceOne> {
     }
 
     pub fn apply(self, placement: PlaceAction<PlaceOne>) -> Game<PlaceTwo> {
-        if placement.game != self {
-            panic!(
-                "Game {:?} received action {:?} associated with a different game!",
-                self, placement
-            );
-        }
+        debug_assert!(placement.game == self, "Game {:?} received action {:?} associated with a different game!", self, placement);
 
         Game {
             state: PlaceTwo {
@@ -1046,12 +1050,7 @@ impl Game<PlaceTwo> {
     }
 
     pub fn apply(self, placement: PlaceAction<PlaceTwo>) -> Game<Move> {
-        if placement.game != self {
-            panic!(
-                "Game {:?} received action {:?} associated with a different game!",
-                self, placement
-            );
-        }
+        debug_assert!(placement.game == self, "Game {:?} received action {:?} associated with a different game!", self, placement);
 
         Game {
             state: Move {
@@ -1234,16 +1233,19 @@ mod game_tests {
             MoveAction {
                 from: pt1,
                 to: Point::new(1.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt1,
                 to: Point::new(0.into(), 1.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt1,
                 to: Point::new(1.into(), 1.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
         ];
@@ -1251,41 +1253,49 @@ mod game_tests {
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(3.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 1.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 1.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(2.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(3.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt2,
                 to: Point::new(4.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
         ];
@@ -1306,16 +1316,19 @@ mod game_tests {
             MoveAction {
                 from: pt3,
                 to: Point::new(3.into(), 3.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt3,
                 to: Point::new(4.into(), 3.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt3,
                 to: Point::new(3.into(), 4.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
         ];
@@ -1323,26 +1336,31 @@ mod game_tests {
             MoveAction {
                 from: pt4,
                 to: Point::new(0.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt4,
                 to: Point::new(1.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt4,
                 to: Point::new(1.into(), 3.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt4,
                 to: Point::new(0.into(), 4.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             MoveAction {
                 from: pt4,
                 to: Point::new(1.into(), 4.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
         ];
@@ -1377,22 +1395,27 @@ mod game_tests {
         let build1 = [
             BuildAction {
                 loc: Point::new(0.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 0.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 1.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             BuildAction {
                 loc: Point::new(0.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
             BuildAction {
                 loc: Point::new(1.into(), 2.into()),
+                #[cfg(debug_assertions)]
                 game: g,
             },
         ];
