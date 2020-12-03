@@ -596,6 +596,61 @@ impl MoveAction {
     }
 }
 
+const OFFSETS: [(i8, i8); 8] = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (-1, 0),
+    (1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+];
+
+const fn neighbors_table() -> [[u64; 61]; 2] {
+    let mut array = [[0; 61]; 2];
+    let mut word  = 0;
+    while word < 2 {
+        let mut nibble = 0;
+        while nibble  <  61 {
+            if nibble % 4 != 0 {
+                nibble += 1;
+                continue;
+            }
+
+            let point = Point { word: word, nibble: nibble };
+            if point.y().0 >= BOARD_HEIGHT.0 {
+                break;
+            }
+            let mut prev = 0;
+            let mut offset: u64 = 0;
+            let mut index = 0;
+            let mut count = 0;
+            while index < 8 {
+                let (dx, dy) = OFFSETS[index];
+                match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
+                    Some(point) => {
+                        let off = point.word * 64 + point.nibble;
+                        let diff: i8 = off - prev;
+                        let diff: u64 = (diff as u64) << (count * 8);
+                        offset |= diff;
+                        prev = off;
+                        count += 1;
+                    },
+                    None => (),
+                }
+                index += 1;
+            }
+            array[word as usize][nibble as usize] = offset;
+            nibble += 1;
+        }
+        word += 1;
+    }
+    array
+}
+
+static ACTION_LOOKUP_TABLE: [[u64; 61]; 2] = neighbors_table();
+
 impl<'a> Pawn<'a, Move> {
     fn level_limit(&self) -> CoordLevel {
         match self.game.board.level_at(self.pos) {
@@ -626,7 +681,46 @@ impl<'a> Pawn<'a, Move> {
         })
     }
 
-    pub fn actions<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
+    pub fn has_actions(&self) -> bool {
+        let mask = match self.game.board.level_at(self.pos) {
+            CoordLevel::Ground => 0b1110,
+            CoordLevel::One => 0b1100,
+            CoordLevel::Two => 0b1000,
+            level => panic!("Pawn at unreachable height: {:?}", level),
+        };
+
+        let mut offsets = ACTION_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
+        let off: u64 = offsets & 0xFF;
+        offsets = offsets & !0xFF;
+
+        let composite = self.game.composite_board();
+        let mut board;
+        if off >= 64 {
+            let off = off - 64;
+            board = composite.board.grid[1] >> off;
+        } else {
+            board = composite.board.grid[0] >> off;
+            if off > 0 {
+                board |= composite.board.grid[1] << (64 - off);
+            }
+        }
+
+        loop {
+            let off = offsets & 0xFF;
+            offsets >>= 8;
+            board = board >> off;
+
+            if board & mask == 0 {
+                return true;
+            }
+
+            if offsets == 0 {
+                return false;
+            }
+        }
+    }
+
+    pub fn actions(&self) -> impl Iterator<Item = MoveAction> {
         struct ActionsIterator {
             board: u64,
             offsets: u64,
@@ -674,61 +768,6 @@ impl<'a> Pawn<'a, Move> {
             };
         }
 
-        const OFFSETS: [(i8, i8); 8] = [
-            (-1, -1),
-            (0, -1),
-            (1, -1),
-            (-1, 0),
-            (1, 0),
-            (-1, 1),
-            (0, 1),
-            (1, 1),
-        ];
-
-        const fn neighbors_table() -> [[u64; 61]; 2] {
-            let mut array = [[0; 61]; 2];
-            let mut word  = 0;
-            while word < 2 {
-                let mut nibble = 0;
-                while nibble  <  61 {
-                    if nibble % 4 != 0 {
-                        nibble += 1;
-                        continue;
-                    }
-
-                    let point = Point { word: word, nibble: nibble };
-                    if point.y().0 >= BOARD_HEIGHT.0 {
-                        break;
-                    }
-                    let mut prev = 0;
-                    let mut offset: u64 = 0;
-                    let mut index = 0;
-                    let mut count = 0;
-                    while index < 8 {
-                        let (dx, dy) = OFFSETS[index];
-                        match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
-                            Some(point) => {
-                                let off = point.word * 64 + point.nibble;
-                                let diff: i8 = off - prev;
-                                let diff: u64 = (diff as u64) << (count * 8);
-                                offset |= diff;
-                                prev = off;
-                                count += 1;
-                            },
-                            None => (),
-                        }
-                        index += 1;
-                    }
-                    array[word as usize][nibble as usize] = offset;
-                    nibble += 1;
-                }
-                word += 1;
-            }
-            array
-        }
-
-        static LOOKUP_TABLE: [[u64; 61]; 2] = neighbors_table();
-
         let mask = match self.game.board.level_at(self.pos) {
             CoordLevel::Ground => 0b1110,
             CoordLevel::One => 0b1100,
@@ -736,7 +775,7 @@ impl<'a> Pawn<'a, Move> {
             level => panic!("Pawn at unreachable height: {:?}", level),
         };
 
-        let offsets = LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
+        let offsets = ACTION_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
         let off: u64 = offsets & 0xFF;
         let offsets = offsets & !0xFF;
 
@@ -905,7 +944,7 @@ impl Game<Build> {
         if new_game
             .active_pawns()
             .iter()
-            .find_map(|pawn| pawn.actions().next())
+            .find(|pawn| pawn.has_actions())
             .is_some()
         {
             ActionResult::Continue(new_game)
