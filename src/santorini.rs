@@ -30,14 +30,14 @@ pub const BOARD_WIDTH: Coord = Coord(5);
 pub const BOARD_HEIGHT: Coord = Coord(5);
 
 impl Point {
-    pub fn x(&self) -> Coord {
+    pub const fn x(&self) -> Coord {
         let offset = self.word * 16 + self.nibble / 4;
-        Coord::from(offset % BOARD_WIDTH.0)
+        Coord(offset % BOARD_WIDTH.0)
     }
 
-    pub fn y(&self) -> Coord {
+    pub const fn y(&self) -> Coord {
         let offset = self.word * 16 + self.nibble / 4;
-        Coord::from(offset / BOARD_WIDTH.0)
+        Coord(offset / BOARD_WIDTH.0)
     }
 
     /// Compute the L\infty (supremum) distance between the points
@@ -627,16 +627,145 @@ impl<'a> Pawn<'a, Move> {
     }
 
     pub fn actions<'b>(&'b self) -> impl Iterator<Item = MoveAction> {
-        let limit = self.level_limit();
-        let from = self.pos;
-        let game = *self.game;
-        let composite = game.composite_board();
-        let active_player = self.player == self.game.player;
+        struct ActionsIterator {
+            board: u64,
+            offsets: u64,
+            mask: u64,
+            action: MoveAction,
+        }
 
-        self.neighbors()
-            .filter(move |_| active_player)
-            .filter(move |to| composite.check(*to, limit))
-            .map(move |to| MoveAction { from, to, game, })
+        impl Iterator for ActionsIterator {
+            type Item = MoveAction;
+
+            fn next(&mut self) -> Option<MoveAction> {
+                loop {
+                    if self.offsets == 0 {
+                        return None;
+                    }
+
+                    let off = self.offsets & 0xFF;
+                    self.offsets = self.offsets >> 8;
+                    self.board = self.board >> off;
+                    self.action.to.nibble += off as i8;
+                    if self.action.to.nibble & 0b1000000 != 0 {
+                        self.action.to.word = 1;
+                        self.action.to.nibble &= !0b1000000;
+                    }
+
+                    if self.board & self.mask == 0 {
+                        break;
+                    }
+                }
+
+                Some(self.action)
+            }
+        }
+
+        if self.player != self.game.player {
+            return ActionsIterator {
+                board: 0,
+                offsets: 0,
+                mask: 0,
+                action: MoveAction {
+                    from: self.pos,
+                    to: self.pos,
+                    game: *self.game,
+                }
+            };
+        }
+
+        const OFFSETS: [(i8, i8); 8] = [
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ];
+
+        const fn neighbors_table() -> [[u64; 61]; 2] {
+            let mut array = [[0; 61]; 2];
+            let mut word  = 0;
+            while word < 2 {
+                let mut nibble = 0;
+                while nibble  <  61 {
+                    if nibble % 4 != 0 {
+                        nibble += 1;
+                        continue;
+                    }
+
+                    let point = Point { word: word, nibble: nibble };
+                    if point.y().0 >= BOARD_HEIGHT.0 {
+                        break;
+                    }
+                    let mut prev = 0;
+                    let mut offset: u64 = 0;
+                    let mut index = 0;
+                    let mut count = 0;
+                    while index < 8 {
+                        let (dx, dy) = OFFSETS[index];
+                        match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
+                            Some(point) => {
+                                let off = point.word * 64 + point.nibble;
+                                let diff: i8 = off - prev;
+                                let diff: u64 = (diff as u64) << (count * 8);
+                                offset |= diff;
+                                prev = off;
+                                count += 1;
+                            },
+                            None => (),
+                        }
+                        index += 1;
+                    }
+                    array[word as usize][nibble as usize] = offset;
+                    nibble += 1;
+                }
+                word += 1;
+            }
+            array
+        }
+
+        static LOOKUP_TABLE: [[u64; 61]; 2] = neighbors_table();
+
+        let mask = match self.game.board.level_at(self.pos) {
+            CoordLevel::Ground => 0b1110,
+            CoordLevel::One => 0b1100,
+            CoordLevel::Two => 0b1000,
+            level => panic!("Pawn at unreachable height: {:?}", level),
+        };
+
+        let offsets = LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
+        let off: u64 = offsets & 0xFF;
+        let offsets = offsets & !0xFF;
+
+        let composite = self.game.composite_board();
+        let board;
+        if off >= 64 {
+            let off = off - 64;
+            board = composite.board.grid[1] >> off;
+        } else {
+            let board_a = composite.board.grid[0] >> off;
+            let board_b;
+            if off > 0 {
+                board_b = composite.board.grid[1] << (64 - off);
+            } else {
+                board_b = 0;
+            }
+            board = board_a | board_b;
+        }
+
+        ActionsIterator {
+            board,
+            offsets,
+            mask,
+            action: MoveAction {
+                from: self.pos,
+                to: Point { word: 0, nibble: off as i8 },
+                game: *self.game,
+            }
+        }
     }
 }
 
@@ -1052,7 +1181,7 @@ mod game_tests {
         let pt1 = Point::new(0.into(), 0.into());
         let pt2 = Point::new(3.into(), 1.into());
         let pt3 = Point::new(4.into(), 4.into());
-        let pt4 = Point::new(2.into(), 4.into());
+        let pt4 = Point::new(0.into(), 3.into());
 
         let action = g.can_place(pt1, pt2).expect("Invalid placement!");
         let g = g.apply(action);
@@ -1126,6 +1255,63 @@ mod game_tests {
         assert_eq!(pawn2.actions().collect::<Vec<MoveAction>>(), moves2);
         assert_eq!(pawn3.actions().collect::<Vec<MoveAction>>(), []);
         assert_eq!(pawn4.actions().collect::<Vec<MoveAction>>(), []);
+
+        let g = g.apply(moves1[0]).expect("Invalid victory!");
+        let build = g.active_pawn().can_build(Point::new(0.into(), 0.into())).expect("Invalid build!");
+        let g = g.apply(build).expect("Invalid victory!");
+
+        let [pawn1, pawn2] = g.inactive_pawns();
+        let [pawn3, pawn4] = g.active_pawns();
+
+        let moves3 = [
+            MoveAction {
+                from: pt3,
+                to: Point::new(3.into(), 3.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt3,
+                to: Point::new(4.into(), 3.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt3,
+                to: Point::new(3.into(), 4.into()),
+                game: g,
+            },
+        ];
+        let moves4 = [
+            MoveAction {
+                from: pt4,
+                to: Point::new(0.into(), 2.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt4,
+                to: Point::new(1.into(), 2.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt4,
+                to: Point::new(1.into(), 3.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt4,
+                to: Point::new(0.into(), 4.into()),
+                game: g,
+            },
+            MoveAction {
+                from: pt4,
+                to: Point::new(1.into(), 4.into()),
+                game: g,
+            },
+        ];
+
+        assert_eq!(pawn1.actions().collect::<Vec<MoveAction>>(), []);
+        assert_eq!(pawn2.actions().collect::<Vec<MoveAction>>(), []);
+        assert_eq!(pawn3.actions().collect::<Vec<MoveAction>>(), moves3);
+        assert_eq!(pawn4.actions().collect::<Vec<MoveAction>>(), moves4);
     }
 
     #[test]
