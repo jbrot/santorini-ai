@@ -12,6 +12,7 @@ debug = true
 
 [dependencies]
 cached = "0.21"
+chrono = "0.4"
 derive_more = "0.99.0"
 rand = { version = "0.7", features = [ "small_rng" ] }
 tui = "0.13"

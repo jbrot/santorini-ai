@@ -25,5 +25,5 @@ pub trait Player<T: GameState> {
     fn step(&mut self, game: &Game<T>) -> Result<StepResult, UpdateError>;
 }
 
-pub trait FullPlayer: Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
-impl<T> FullPlayer for T where T: Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
+pub trait FullPlayer: Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
+impl<T> FullPlayer for T where T: Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
