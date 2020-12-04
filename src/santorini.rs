@@ -182,7 +182,7 @@ pub struct Board {
 impl Board {
     fn new() -> Board {
         Board {
-            grid: [0; 2]
+            grid: [0x1111_1111_1111_1111; 2]
         }
     }
 
@@ -190,11 +190,11 @@ impl Board {
         let data = self.grid[loc.word as usize];
         let data = (data >> loc.nibble) & 0xF;
         match data {
-            0b0000 => CoordLevel::Ground,
-            0b0001 => CoordLevel::One,
-            0b0010 => CoordLevel::Two,
-            0b0100 => CoordLevel::Three,
-            0b1000 => CoordLevel::Capped,
+            0b0001 => CoordLevel::Ground,
+            0b0010 => CoordLevel::One,
+            0b0100 => CoordLevel::Two,
+            0b1000 => CoordLevel::Three,
+            0b0000 => CoordLevel::Capped,
             _ => panic!("Invalid entry at {:?}: {}", loc, data),
         }
     }
@@ -202,25 +202,25 @@ impl Board {
     pub fn less_than_equals(&self, loc: Point, level: CoordLevel) -> bool {
         let data = self.grid[loc.word as usize];
         let mask = match level {
-            CoordLevel::Ground => 0b1111,
-            CoordLevel::One => 0b1110,
-            CoordLevel::Two => 0b1100,
-            CoordLevel::Three => 0b1000,
+            CoordLevel::Ground => 0b0001,
+            CoordLevel::One => 0b0011,
+            CoordLevel::Two => 0b0111,
+            CoordLevel::Three => 0b1111,
             CoordLevel::Capped => return true,
         };
         let mask = mask << loc.nibble;
-        return data & mask == 0;
+        return data & mask != 0;
     }
 
     fn build(&mut self, loc: Point) {
         let data = &mut self.grid[loc.word as usize];
         let level = (*data >> loc.nibble) & 0xF;
         let mask = match level {
-            0b0000 => 0b0001,
             0b0001 => 0b0011,
             0b0010 => 0b0110,
             0b0100 => 0b1100,
-            0b1000 => panic!["Invalid build action!"],
+            0b1000 => 0b1000,
+            0b0000 => panic!["Invalid build action!"],
             _ => panic!("Invalid entry at {:?}: {}", loc, data),
         };
         let mask = mask << loc.nibble;
@@ -230,9 +230,7 @@ impl Board {
     fn cap(&mut self, loc: Point) {
         let data = &mut self.grid[loc.word as usize];
         let mask1 = !(0xF << loc.nibble);
-        let mask2 = 0b1000 << loc.nibble;
         *data &= mask1;
-        *data |= mask2;
     }
 }
 
@@ -652,6 +650,56 @@ const fn neighbors_table() -> [[u64; 61]; 2] {
 
 static ACTION_LOOKUP_TABLE: [[u64; 61]; 2] = neighbors_table();
 
+const fn mask_table() -> [[[[u64; 2]; 3]; 61]; 2] {
+    let mut array = [[[[0; 2]; 3]; 61]; 2];
+    let mut word  = 0;
+    while word < 2 {
+        let mut nibble = 0;
+        while nibble  <  61 {
+            if nibble % 4 != 0 {
+                nibble += 1;
+                continue;
+            }
+
+            let point = Point { word: word, nibble: nibble };
+            if point.y().0 >= BOARD_HEIGHT.0 {
+                break;
+            }
+
+            let mut level = 0;
+            while level < 3 {
+                let mask = match level {
+                    0 => 0b0011,
+                    1 => 0b0111,
+                    2 => 0b1111,
+                    _ => 0, // We should never get here
+                };
+
+                let mut index = 0;
+                let mut entry = [0; 2];
+                while index < 8 {
+                    let (dx, dy) = OFFSETS[index];
+                    match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
+                        Some(point) => {
+                            entry[point.word as usize] |= mask << point.nibble;
+                        },
+                        None => (),
+                    }
+                    index += 1;
+                }
+                array[word as usize][nibble as usize][level as usize] = entry;
+
+                level += 1;
+            }
+            nibble += 1;
+        }
+        word += 1;
+    }
+    array
+}
+
+static MASK_LOOKUP_TABLE: [[[[u64; 2]; 3]; 61]; 2] = mask_table();
+
 impl<'a> Pawn<'a, Move> {
     fn level_limit(&self) -> CoordLevel {
         match self.game.board.level_at(self.pos) {
@@ -684,53 +732,24 @@ impl<'a> Pawn<'a, Move> {
     }
 
     pub fn has_actions(&self) -> bool {
-        let mask = match self.game.board.level_at(self.pos) {
-            CoordLevel::Ground => 0b1110,
-            CoordLevel::One => 0b1100,
-            CoordLevel::Two => 0b1000,
+        let mask = MASK_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize][
+            match self.game.board.level_at(self.pos) {
+            CoordLevel::Ground => 0,
+            CoordLevel::One => 1,
+            CoordLevel::Two => 2,
             level => panic!("Pawn at unreachable height: {:?}", level),
-        };
-
-        let mut offsets = ACTION_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize];
-        let off: u64 = offsets & 0xFF;
-        offsets >>= 8;
+        }];
 
         let composite = self.game.composite_board();
-        let mut board;
-        if off >= 64 {
-            let off = off - 64;
-            board = composite.board.grid[1] >> off;
-
-            if board & mask == 0 {
-                return true;
-            }
-        } else {
-            board = composite.board.grid[0] >> off;
-            if board & mask == 0 {
-                return true;
-            }
-
-            if off > 0 {
-                board |= composite.board.grid[1] << (64 - off);
-            }
+        if composite.board.grid[0] & mask[0] != 0 {
+            return true;
         }
 
-        if offsets == 0 {
-            return false;
+        if composite.board.grid[1] & mask[1] != 0 {
+            return true;
         }
 
-        loop {
-            let off = offsets & 0xFF;
-            board = board >> off;
-            if board & mask == 0 {
-                return true;
-            }
-
-            offsets >>= 8;
-            if offsets == 0 {
-                return false;
-            }
-        }
+        return false;
     }
 
     pub fn actions(&self) -> impl Iterator<Item = MoveAction> {
@@ -759,7 +778,7 @@ impl<'a> Pawn<'a, Move> {
                         self.action.to.nibble &= !0b1000000;
                     }
 
-                    if self.board & self.mask == 0 {
+                    if self.board & self.mask != 0 {
                         break;
                     }
                 }
@@ -783,9 +802,9 @@ impl<'a> Pawn<'a, Move> {
         }
 
         let mask = match self.game.board.level_at(self.pos) {
-            CoordLevel::Ground => 0b1110,
-            CoordLevel::One => 0b1100,
-            CoordLevel::Two => 0b1000,
+            CoordLevel::Ground => 0b0011,
+            CoordLevel::One => 0b0111,
+            CoordLevel::Two => 0b1111,
             level => panic!("Pawn at unreachable height: {:?}", level),
         };
 
