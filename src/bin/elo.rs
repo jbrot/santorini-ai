@@ -1,7 +1,7 @@
 use chrono::Local;
 use std::thread::{self, JoinHandle};
 use santorini_ai::ui::UpdateError;
-use santorini_ai::player::{FullPlayer, StepResult, HeuristicAI, MCTSAI, RandomAI};
+use santorini_ai::player::{FullPlayer, StepResult, HeuristicAI, MCTSAI, PUCT, RandomAI};
 use santorini_ai::santorini;
 
 struct Contestant<'a> {
@@ -66,7 +66,8 @@ fn main() -> Result<(), UpdateError> {
     let mut players = [ 
         Contestant::new("Random", Box::new(|| { RandomAI::new() })),
         Contestant::new("Heuristic", Box::new(|| { HeuristicAI::new() })),
-        Contestant::new("MCTS", Box::new(|| { MCTSAI::new() })),
+        Contestant::new("MCTS UCT", Box::new(|| { MCTSAI::default() })),
+        Contestant::new("MCTS PUCT", Box::new(|| { MCTSAI::new(PUCT { parameter: f64::sqrt(2.0) }) })),
     ];
 
     let mut k = 100.0;

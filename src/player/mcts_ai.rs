@@ -101,7 +101,7 @@ impl NodeState {
 pub struct Node {
     children: Option<Vec<Node>>,
     iterations: u32,
-    score: i32,
+    score: f64,
     mv: Option<MoveAction>,
     build: Option<BuildAction>,
     game: NodeState,
@@ -112,30 +112,30 @@ impl Node {
         Node {
             children: None,
             iterations: 1,
-            score: simulate(game, rng),
+            score: simulate(game, rng) as f64,
             mv: None,
             build: None,
             game: NodeState::Move(game),
         }
     }
 
-    fn expand<R: Rng>(&mut self, rng: &mut R) -> (u32, i32) {
+    fn expand<R: Rng>(&mut self, rng: &mut R) -> (u32, f64) {
         assert!(self.children.is_none(), "Node has already been expanded!");
 
         if let NodeState::Move(game) = self.game {
             let mut children = Vec::new();
-            let mut new_scores: i32 = 0;
+            let mut new_scores: f64 = 0.0;
             for ((mv, build), result) in possible_actions(game) {
                 let node_state;
                 let score;
                 match result {
                     ActionResult::Victory(won_game) => {
                         node_state = NodeState::Victory(won_game.player());
-                        score = 1;
+                        score = 1.0;
                     },
                     ActionResult::Continue(game) => {
                         node_state = NodeState::Move(game);
-                        score = simulate(game, rng);
+                        score = simulate(game, rng) as f64;
                     },
                 }
                 let node = Node {
@@ -147,12 +147,13 @@ impl Node {
                     game: node_state,
                 };
                 children.push(node);
-                new_scores += -1 * score;
+                new_scores += -1.0 * score;
             }
 
             let new_nodes = children.len() as u32;
-            self.score += new_scores;
+            let new_score = self.score * (self.iterations as f64) + new_scores;
             self.iterations += new_nodes;
+            self.score = new_score / (self.iterations as f64);
             self.children = Some(children);
 
             (new_nodes, new_scores)
@@ -161,23 +162,58 @@ impl Node {
         }
     }
 
-    fn choose_child(&self) -> usize {
-        assert!(self.children.is_some(), "Node hasn't been expanded!");
-        let children = self.children.as_ref().unwrap();
+    pub fn step<R: Rng>(&mut self, tree_policy: &Box<dyn TreePolicy>, rng: &mut R) -> (u32, f64) {
+        if self.game.is_victory() {
+            return (1, 1.0);
+        }
+
+        match self.children {
+            None => self.expand(rng),
+            Some(_) => {
+                let idx = tree_policy.select(self);
+                let (count, delta) = self.children.as_mut().unwrap()[idx].step(tree_policy, rng);
+                let new_score = self.score * self.iterations as f64 - delta;
+                self.iterations += count;
+                self.score = new_score / (self.iterations as f64);
+                (count, -delta)
+            }
+        }
+    }
+}
+
+pub trait TreePolicy: Send {
+    fn select(&self, node: &Node) -> usize;
+}
+
+pub struct UCB1 {
+    pub parameter: f64,
+}
+
+impl UCB1 {
+    pub fn default() -> UCB1 {
+        UCB1 {
+            parameter: f64::sqrt(2.0),
+        }
+    }
+}
+
+impl TreePolicy for UCB1 {
+    fn select(&self, node: &Node) -> usize {
+        assert!(node.children.is_some(), "Node hasn't been expanded!");
+        let children = node.children.as_ref().unwrap();
 
         // UCB1 algorithm for choosing a child (multi-arm bandit)
         let mut best_index = None;
         let mut best_weight = None;
         for (index, child) in children.iter().enumerate() {
-            let avg_value = (child.score as f64) / (child.iterations as f64);
             // Rescale to be between 0 and 1
-            let avg_value = (1.0 + avg_value) / 2.0;
+            let child_score = (1.0 + child.score) / 2.0;
 
-            let augment = 2.0 * f64::ln(self.iterations as f64);
+            let augment = f64::ln(node.iterations as f64);
             let augment = augment / (child.iterations as f64);
             let augment = f64::sqrt(augment);
 
-            let weight = avg_value + augment;
+            let weight = child_score + self.parameter * augment;
             match best_weight {
                 None => {
                     best_weight = Some(weight);
@@ -192,22 +228,41 @@ impl Node {
 
         best_index.expect("No children!")
     }
+}
 
-    pub fn step<R: Rng>(&mut self, rng: &mut R) -> (u32, i32) {
-        if self.game.is_victory() {
-            return (1, 1);
-        }
+pub struct PUCT {
+    pub parameter: f64,
+}
 
-        match self.children {
-            None => self.expand(rng),
-            Some(_) => {
-                let idx = self.choose_child();
-                let (count, delta) = self.children.as_mut().unwrap()[idx].step(rng);
-                self.iterations += count;
-                self.score -= delta;
-                (count, -delta)
+impl TreePolicy for PUCT {
+    fn select(&self, node: &Node) -> usize {
+        assert!(node.children.is_some(), "Node hasn't been expanded!");
+        let children = node.children.as_ref().unwrap();
+
+        // UCB1 algorithm for choosing a child (multi-arm bandit)
+        let mut best_index = None;
+        let mut best_weight = None;
+        for (index, child) in children.iter().enumerate() {
+            // Rescale to be between 0 and 1
+            let child_score = (1.0 + child.score) / 2.0;
+
+            let augment = f64::sqrt(node.iterations as f64);
+            let augment = augment / (child.iterations as f64);
+
+            let weight = child_score + self.parameter * augment;
+            match best_weight {
+                None => {
+                    best_weight = Some(weight);
+                    best_index = Some(index);
+                },
+                Some(best) => if weight > best {
+                    best_weight = Some(weight);
+                    best_index = Some(index);
+                }
             }
         }
+
+        best_index.expect("No children!")
     }
 }
 
@@ -216,13 +271,23 @@ static EMPTY: Vec<Point> = Vec::new();
 pub struct MCTSAI {
     node: Option<Node>,
     rng: SmallRng,
+    tree_policy: Box<dyn TreePolicy>,
 }
 
 impl MCTSAI {
-    pub fn new() -> Box<dyn FullPlayer> {
+    pub fn default() -> Box<dyn FullPlayer> {
         Box::new(MCTSAI {
             node: None,
             rng: SmallRng::from_entropy(),
+            tree_policy: Box::new(UCB1::default()),
+        })
+    }
+
+    pub fn new<T: 'static + TreePolicy>(tree_policy: T) -> Box<dyn FullPlayer> {
+        Box::new(MCTSAI {
+            node: None,
+            rng: SmallRng::from_entropy(),
+            tree_policy: Box::new(tree_policy),
         })
     }
 
@@ -231,7 +296,7 @@ impl MCTSAI {
         let start = Instant::now();
         loop {
             for _ in 0..10 {
-                node.step(&mut self.rng);
+                node.step(&self.tree_policy, &mut self.rng);
             }
 
             if Instant::now().duration_since(start) > budget {

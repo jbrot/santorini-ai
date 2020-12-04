@@ -8,7 +8,7 @@ pub mod random_ai;
 
 pub use heuristic_ai::HeuristicAI;
 pub use human::HumanPlayer;
-pub use mcts_ai::MCTSAI;
+pub use mcts_ai::{MCTSAI, UCB1, PUCT};
 pub use random_ai::RandomAI;
 
 pub enum StepResult {

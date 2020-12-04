@@ -45,7 +45,7 @@ pub fn main_menu<'a>() -> Box<dyn Screen> {
             ),
             (
                 Spans::from("1 Player Game"),
-                Box::new(|| Ok(new_app(HumanPlayer::new(), MCTSAI::new()))),
+                Box::new(|| Ok(new_app(HumanPlayer::new(), MCTSAI::default()))),
             ),
             (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
         ],
