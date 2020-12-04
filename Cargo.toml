@@ -3,6 +3,7 @@ name = "santorini-ai"
 version = "0.1.0"
 authors = ["Joshua Brot <jbrot@umich.edu>"]
 edition = "2018"
+default-run = "santorini-ai"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

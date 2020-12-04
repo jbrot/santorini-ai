@@ -372,7 +372,7 @@ impl Player<Move> for MCTSAI {
 
     fn step(&mut self, game: &Game<Move>) -> Result<StepResult, UpdateError> {
         if self.node.as_ref().expect("Missing node!").game == NodeState::Move(*game) {
-            self.simulate(Duration::from_secs(5));
+            self.simulate(Duration::from_secs(2));
 
             // let mut file = std::fs::OpenOptions::new()
             //     .create(true)
