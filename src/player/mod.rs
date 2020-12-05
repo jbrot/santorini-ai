@@ -8,7 +8,7 @@ pub mod random_ai;
 
 pub use heuristic_ai::HeuristicAI;
 pub use human::HumanPlayer;
-pub use mcts_ai::{MCTSAI, UCB1, PUCT};
+pub use mcts_ai::{MctsAI, MctsSantoriniParams};
 pub use random_ai::RandomAI;
 
 pub enum StepResult {
@@ -25,5 +25,11 @@ pub trait Player<T: GameState> {
     fn step(&mut self, game: &Game<T>) -> Result<StepResult, UpdateError>;
 }
 
-pub trait FullPlayer: Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
-impl<T> FullPlayer for T where T: Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move> {}
+pub trait FullPlayer:
+    Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move>
+{
+}
+impl<T> FullPlayer for T where
+    T: Send + Player<PlaceOne> + Player<PlaceTwo> + Player<Build> + Player<Move>
+{
+}

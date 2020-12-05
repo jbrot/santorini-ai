@@ -8,7 +8,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::Terminal;
 
-use crate::player::{MCTSAI, HumanPlayer};
+use crate::player::{HumanPlayer, MctsSantoriniParams};
 
 mod app;
 mod board;
@@ -18,7 +18,7 @@ mod menu;
 pub use app::{new_app, App};
 pub use board::BoardWidget;
 pub use bounds::BoundsWidget;
-pub use menu::Menu;
+pub use menu::{Menu, MenuWidget};
 
 pub type Back = TermionBackend<MouseTerminal<RawTerminal<io::Stdout>>>;
 pub type Term = Terminal<Back>;
@@ -45,7 +45,12 @@ pub fn main_menu<'a>() -> Box<dyn Screen> {
             ),
             (
                 Spans::from("1 Player Game"),
-                Box::new(|| Ok(new_app(HumanPlayer::new(), MCTSAI::default()))),
+                Box::new(|| {
+                    Ok(new_app(
+                        HumanPlayer::new(),
+                        MctsSantoriniParams::default().boxed(),
+                    ))
+                }),
             ),
             (Spans::from("Quit"), Box::new(|| Err(UpdateError::Shutdown))),
         ],

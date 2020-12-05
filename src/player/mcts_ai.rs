@@ -1,338 +1,78 @@
-use rand::{Rng, SeedableRng};
-use rand::rngs::SmallRng;
-use std::mem;
-use std::time::{Duration, Instant};
-use std::io;
-use std::io::Write;
-
 use crate::player::{FullPlayer, Player, StepResult};
 use crate::santorini::{
-    self, ActionResult, Build, BuildAction, Game, GameState, Move, MoveAction,
-    NormalState, PlaceOne, PlaceTwo, Point,
+    self, ActionResult, Build, Game, GameState, Move, NormalState, PlaceOne, PlaceTwo, Point,
 };
 use crate::ui::{BoardWidget, UpdateError};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 
-/// Move for each player until the game ends according to the following policy:
-///   1. If there exists a winning action, take it.
-///   2. Otherwise, pick a random action.
-///
-/// Returns -1.0 if the active player in the provided game wins and 1.0 if the
-/// other player wins.
-///
-/// In other words, we return 1.0 if the player who moved to get to this state
-/// wins---which is what we want because in MCTS we consider Games from the
-/// perspective of the previous turn.
-pub fn simulate<R: Rng>(mut game: Game<Move>, rng: &mut R) -> i32 {
-    let player = game.player();
+use crate::mcts::santorini::{SantoriniExpansion, SantoriniNode, SantoriniSimulation};
+use crate::mcts::{Mcts, MctsParams};
 
-    enum PossibleAction {
-        Victory,
-        Continue (Game<Move>),
-    }
-    
-    fn find_action<R: Rng>(game: Game<Move>, rng: &mut R) -> PossibleAction {
-        let mut choice = game;
-        let mut count = 0.0;
-        for mv in game.active_pawns().iter().map(|pawn| pawn.actions()).flatten() {
-            match game.apply(mv) {
-                ActionResult::Victory(_) => return PossibleAction::Victory,
-                ActionResult::Continue(game) => {
-                    for build in game.active_pawn().actions() {
-                        match game.apply(build) {
-                            ActionResult::Victory(_) => return PossibleAction::Victory,
-                            ActionResult::Continue(game) => {
-                                count += 1.0;
-                                if rng.gen::<f64>() < 1.0 / count {
-                                    choice = game;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        PossibleAction::Continue(choice)
-    }
+pub enum MctsOrParams<T, R: Rng> {
+    Params(MctsParams<T, R>),
+    Tree(Mcts<T, R>),
+}
 
-    loop {
-        match find_action(game, rng) {
-            PossibleAction::Victory => return if game.player() == player { -1 } else { 1 },
-            PossibleAction::Continue(choice) => game = choice,
-        }
+impl<T, R: Rng> From<MctsParams<T, R>> for MctsOrParams<T, R> {
+    fn from(params: MctsParams<T, R>) -> MctsOrParams<T, R> {
+        MctsOrParams::Params(params)
     }
 }
 
-/// List all possible actions
-fn possible_actions(
-    game: Game<Move>,
-) -> Vec<((MoveAction, Option<BuildAction>), ActionResult<Move>)> {
-    game.active_pawns()
-        .iter()
-        .map(|pawn| pawn.actions())
-        .flatten()
-        .map(|mv| match game.apply(mv) {
-            ActionResult::Victory(game) => vec![((mv, None), ActionResult::Victory(game))],
-            ActionResult::Continue(game) => game
-                .active_pawn()
-                .actions()
-                .map(|build| ((mv, Some(build)), game.apply(build)))
-                .collect(),
-        })
-        .flatten()
-        .collect()
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum NodeState {
-    Move(Game<Move>),
-    Victory(santorini::Player),
-}
-
-impl NodeState {
-    fn is_victory(&self) -> bool {
+impl<T, R: Rng> MctsOrParams<T, R> {
+    fn params(&mut self) -> &mut MctsParams<T, R> {
         match self {
-            NodeState::Move(_) => false,
-            NodeState::Victory(_) => true,
+            MctsOrParams::Tree(tree) => &mut tree.params,
+            MctsOrParams::Params(params) => params,
+        }
+    }
+
+    fn tree(&mut self, node: T) -> &mut Mcts<T, R> {
+        take_mut::take(self, move |mcts_or_params| match mcts_or_params {
+            MctsOrParams::Params(params) => MctsOrParams::Tree(Mcts::new(params, node)),
+            MctsOrParams::Tree(_) => mcts_or_params,
+        });
+
+        match self {
+            MctsOrParams::Tree(tree) => tree,
+            // Params branch will be replaced with a Tree branch above
+            MctsOrParams::Params(_) => unsafe { std::hint::unreachable_unchecked() },
+        }
+    }
+
+    fn expect<S: 'static + Send>(&self, message: S) -> &Mcts<T, R> {
+        match self {
+            MctsOrParams::Tree(tree) => tree,
+            MctsOrParams::Params(_) => panic!(message),
         }
     }
 }
 
-#[derive(Clone)]
-pub struct Node {
-    children: Option<Vec<Node>>,
-    iterations: u32,
-    score: f64,
-    mv: Option<MoveAction>,
-    build: Option<BuildAction>,
-    game: NodeState,
-}
-
-impl Node {
-    pub fn new<R: Rng>(game: Game<Move>, rng: &mut R) -> Node {
-        Node {
-            children: None,
-            iterations: 1,
-            score: simulate(game, rng) as f64,
-            mv: None,
-            build: None,
-            game: NodeState::Move(game),
-        }
+pub type MctsSantoriniParams = MctsParams<SantoriniNode, SmallRng>;
+impl MctsSantoriniParams {
+    pub fn default() -> Self {
+        MctsSantoriniParams::new(
+            SantoriniSimulation {},
+            SantoriniExpansion {},
+            SmallRng::from_entropy(),
+        )
     }
 
-    fn expand<R: Rng>(&mut self, rng: &mut R) -> (u32, f64) {
-        assert!(self.children.is_none(), "Node has already been expanded!");
-
-        if let NodeState::Move(game) = self.game {
-            let mut children = Vec::new();
-            let mut new_scores: f64 = 0.0;
-            for ((mv, build), result) in possible_actions(game) {
-                let node_state;
-                let score;
-                match result {
-                    ActionResult::Victory(won_game) => {
-                        node_state = NodeState::Victory(won_game.player());
-                        score = 1.0;
-                    },
-                    ActionResult::Continue(game) => {
-                        node_state = NodeState::Move(game);
-                        score = simulate(game, rng) as f64;
-                    },
-                }
-                let node = Node {
-                    children: None,
-                    iterations: 1,
-                    score,
-                    mv: Some(mv),
-                    build,
-                    game: node_state,
-                };
-                children.push(node);
-                new_scores += -1.0 * score;
-            }
-
-            let new_nodes = children.len() as u32;
-            let new_score = self.score * (self.iterations as f64) + new_scores;
-            self.iterations += new_nodes;
-            self.score = new_score / (self.iterations as f64);
-            self.children = Some(children);
-
-            (new_nodes, new_scores)
-        } else {
-            panic!("Tried to expand terminal node!");
-        }
-    }
-
-    pub fn step<R: Rng>(&mut self, tree_policy: &Box<dyn TreePolicy>, rng: &mut R) -> (u32, f64) {
-        if self.game.is_victory() {
-            return (1, 1.0);
-        }
-
-        match self.children {
-            None => self.expand(rng),
-            Some(_) => {
-                let idx = tree_policy.select(self);
-                let (count, delta) = self.children.as_mut().unwrap()[idx].step(tree_policy, rng);
-                let new_score = self.score * self.iterations as f64 - delta;
-                self.iterations += count;
-                self.score = new_score / (self.iterations as f64);
-                (count, -delta)
-            }
-        }
+    pub fn boxed(self) -> Box<dyn FullPlayer> {
+        MctsAI::from(self).boxed()
     }
 }
 
-pub trait TreePolicy: Send {
-    fn select(&self, node: &Node) -> usize;
-}
+pub type MctsAI = MctsOrParams<SantoriniNode, SmallRng>;
 
-pub struct UCB1 {
-    pub parameter: f64,
-}
-
-impl UCB1 {
-    pub fn default() -> UCB1 {
-        UCB1 {
-            parameter: f64::sqrt(2.0),
-        }
-    }
-}
-
-impl TreePolicy for UCB1 {
-    fn select(&self, node: &Node) -> usize {
-        assert!(node.children.is_some(), "Node hasn't been expanded!");
-        let children = node.children.as_ref().unwrap();
-
-        // UCB1 algorithm for choosing a child (multi-arm bandit)
-        let mut best_index = None;
-        let mut best_weight = None;
-        for (index, child) in children.iter().enumerate() {
-            // Rescale to be between 0 and 1
-            let child_score = (1.0 + child.score) / 2.0;
-
-            let augment = f64::ln(node.iterations as f64);
-            let augment = augment / (child.iterations as f64);
-            let augment = f64::sqrt(augment);
-
-            let weight = child_score + self.parameter * augment;
-            match best_weight {
-                None => {
-                    best_weight = Some(weight);
-                    best_index = Some(index);
-                },
-                Some(best) => if weight > best {
-                    best_weight = Some(weight);
-                    best_index = Some(index);
-                }
-            }
-        }
-
-        best_index.expect("No children!")
-    }
-}
-
-pub struct PUCT {
-    pub parameter: f64,
-}
-
-impl TreePolicy for PUCT {
-    fn select(&self, node: &Node) -> usize {
-        assert!(node.children.is_some(), "Node hasn't been expanded!");
-        let children = node.children.as_ref().unwrap();
-
-        // UCB1 algorithm for choosing a child (multi-arm bandit)
-        let mut best_index = None;
-        let mut best_weight = None;
-        for (index, child) in children.iter().enumerate() {
-            // Rescale to be between 0 and 1
-            let child_score = (1.0 + child.score) / 2.0;
-
-            let augment = f64::sqrt(node.iterations as f64);
-            let augment = augment / (child.iterations as f64);
-
-            let weight = child_score + self.parameter * augment;
-            match best_weight {
-                None => {
-                    best_weight = Some(weight);
-                    best_index = Some(index);
-                },
-                Some(best) => if weight > best {
-                    best_weight = Some(weight);
-                    best_index = Some(index);
-                }
-            }
-        }
-
-        best_index.expect("No children!")
+impl MctsAI {
+    fn boxed(self) -> Box<dyn FullPlayer> {
+        Box::new(self)
     }
 }
 
 static EMPTY: Vec<Point> = Vec::new();
-
-pub struct MCTSAI {
-    node: Option<Node>,
-    rng: SmallRng,
-    tree_policy: Box<dyn TreePolicy>,
-}
-
-impl MCTSAI {
-    pub fn default() -> Box<dyn FullPlayer> {
-        Box::new(MCTSAI {
-            node: None,
-            rng: SmallRng::from_entropy(),
-            tree_policy: Box::new(UCB1::default()),
-        })
-    }
-
-    pub fn new<T: 'static + TreePolicy>(tree_policy: T) -> Box<dyn FullPlayer> {
-        Box::new(MCTSAI {
-            node: None,
-            rng: SmallRng::from_entropy(),
-            tree_policy: Box::new(tree_policy),
-        })
-    }
-
-    pub fn simulate(&mut self, budget: Duration) {
-        let mut node = mem::replace(&mut self.node, None).expect("Missing root node!");
-        let start = Instant::now();
-        loop {
-            for _ in 0..10 {
-                node.step(&self.tree_policy, &mut self.rng);
-            }
-
-            if Instant::now().duration_since(start) > budget {
-                let children = node.children.as_ref().expect("Missing children");
-                let mut best_score = children[0].score as f64 / children[0].iterations as f64;
-                let mut best_score_idx = 0;
-                let mut most_visits = children[0].iterations;
-                let mut most_visits_idx = 0;
-
-                for (index, child) in children.iter().enumerate() {
-                    if child.game.is_victory() {
-                        best_score_idx = index;
-                        most_visits_idx = index;
-                        break;
-                    }
-
-                    let score = child.score as f64 / child.iterations as f64;
-                    if score > best_score {
-                        best_score = score;
-                        best_score_idx = index;
-                    }
-
-                    if child.iterations > most_visits {
-                        most_visits = child.iterations;
-                        most_visits_idx = index;
-                    }
-                }
-
-                if best_score_idx == most_visits_idx {
-                    self.node = Some(node.children.unwrap().into_iter().nth(best_score_idx).unwrap());
-                    return;
-                }
-            }
-        }
-    }
-}
 
 fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget<'a> {
     BoardWidget {
@@ -355,13 +95,13 @@ fn default_render<'a, T: GameState + NormalState>(game: &Game<T>) -> BoardWidget
 }
 
 // TODO: Add support for placement to the tree
-fn random_pt<R : Rng>(rng: &mut R) -> Point {
+fn random_pt<R: Rng>(rng: &mut R) -> Point {
     let x: i8 = rng.gen_range(1, santorini::BOARD_WIDTH.0 - 1);
     let y: i8 = rng.gen_range(1, santorini::BOARD_HEIGHT.0 - 1);
     Point::new(x.into(), y.into())
 }
 
-impl Player<PlaceOne> for MCTSAI {
+impl Player<PlaceOne> for MctsAI {
     fn prepare(&mut self, _: &Game<PlaceOne>) {}
 
     fn render(&self, game: &Game<PlaceOne>) -> BoardWidget {
@@ -377,8 +117,8 @@ impl Player<PlaceOne> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<PlaceOne>) -> Result<StepResult, UpdateError> {
-        let pt1 = random_pt(&mut self.rng);
-        let pt2 = random_pt(&mut self.rng);
+        let pt1 = random_pt(&mut self.params().rng);
+        let pt2 = random_pt(&mut self.params().rng);
         match game.can_place(pt1, pt2) {
             Some(action) => Ok(StepResult::PlaceTwo(game.clone().apply(action))),
             None => Ok(StepResult::NoMove),
@@ -386,7 +126,7 @@ impl Player<PlaceOne> for MCTSAI {
     }
 }
 
-impl Player<PlaceTwo> for MCTSAI {
+impl Player<PlaceTwo> for MctsAI {
     fn prepare(&mut self, _: &Game<PlaceTwo>) {}
 
     fn render(&self, game: &Game<PlaceTwo>) -> BoardWidget {
@@ -402,8 +142,8 @@ impl Player<PlaceTwo> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<PlaceTwo>) -> Result<StepResult, UpdateError> {
-        let pt1 = random_pt(&mut self.rng);
-        let pt2 = random_pt(&mut self.rng);
+        let pt1 = random_pt(&mut self.params().rng);
+        let pt2 = random_pt(&mut self.params().rng);
         match game.can_place(pt1, pt2) {
             Some(action) => Ok(StepResult::Move(game.clone().apply(action))),
             None => Ok(StepResult::NoMove),
@@ -411,24 +151,23 @@ impl Player<PlaceTwo> for MCTSAI {
     }
 }
 
-impl Player<Move> for MCTSAI {
+impl Player<Move> for MctsAI {
     fn prepare(&mut self, game: &Game<Move>) {
-        let current = mem::replace(&mut self.node, None);
-        if let Some(node) = current {
-            let mut found = false;
-            for child in node.children.expect("Unexpanded root node!") {
-                if child.game == NodeState::Move(*game) {
-                    self.node = Some(child);
-                    found = true;
-                    break;
-                }
-            }
-            assert!(found, "Tree reset!");
+        let tree = self.tree((*game).into());
+        let node = &tree.root_node;
+        if node.state.matches(*game) {
+            return;
         }
 
-        if self.node.is_none() {
-            self.node = Some(Node::new(*game, &mut self.rng));
-        }
+        take_mut::take(&mut tree.root_node, |node| {
+            for child in node.children.expect("Unexpanded root node!") {
+                if child.state.matches(*game) {
+                    return child;
+                }
+            }
+
+            panic!("Current game state not in tree!");
+        });
     }
 
     fn render(&self, game: &Game<Move>) -> BoardWidget {
@@ -436,25 +175,12 @@ impl Player<Move> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<Move>) -> Result<StepResult, UpdateError> {
-        if self.node.as_ref().expect("Missing node!").game == NodeState::Move(*game) {
-            self.simulate(Duration::from_secs(2));
-
-            // let mut file = std::fs::OpenOptions::new()
-            //     .create(true)
-            //     .append(true)
-            //     .open("mcts.log")
-            //     .unwrap();
-
-            //     writeln!(file, "{}: Visits: {} Score: {} Move: {:?} Build: {:?}", index, child.iterations, child.score, child.mv.map(|ma| ma.to()), child.build.map(|ba| ba.loc()));
-
-            // writeln!(file, "Choosing: {}", best_child);
-            // writeln!(file, "");
-
-            // writeln!(file, "Chosen: Move: {:?} Build: {:?}", self.node.as_ref().unwrap().mv, self.node.as_ref().unwrap().build);
-            // writeln!(file, "");
+        let tree = self.tree((*game).into());
+        if tree.root_node.state.matches(*game) {
+            tree.advance();
         }
 
-        let action = self.node.as_ref().expect("Missing node!").mv.expect("Missing move action!");
+        let action = tree.root_node.state.mv.expect("Missing move action!");
         match game.clone().apply(action) {
             ActionResult::Continue(game) => Ok(StepResult::Build(game)),
             ActionResult::Victory(game) => Ok(StepResult::Victory(game)),
@@ -462,7 +188,7 @@ impl Player<Move> for MCTSAI {
     }
 }
 
-impl Player<Build> for MCTSAI {
+impl Player<Build> for MctsAI {
     fn prepare(&mut self, _: &Game<Build>) {}
 
     fn render(&self, game: &Game<Build>) -> BoardWidget {
@@ -470,7 +196,12 @@ impl Player<Build> for MCTSAI {
     }
 
     fn step(&mut self, game: &Game<Build>) -> Result<StepResult, UpdateError> {
-        let action = self.node.as_ref().expect("Missing node!").build.expect("Missing build action!");
+        let action = self
+            .expect("Unitialized tree!")
+            .root_node
+            .state
+            .build
+            .expect("Missing build action!");
         match game.clone().apply(action) {
             ActionResult::Continue(game) => Ok(StepResult::Move(game)),
             ActionResult::Victory(game) => Ok(StepResult::Victory(game)),

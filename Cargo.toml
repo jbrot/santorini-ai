@@ -15,6 +15,7 @@ cached = "0.21"
 chrono = "0.4"
 derive_more = "0.99.0"
 rand = { version = "0.7", features = [ "small_rng" ] }
+take_mut = "0.2"
 tui = "0.13"
 termion = "1.5"
 thiserror = "1.0"

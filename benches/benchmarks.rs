@@ -1,10 +1,10 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
+use rand::SeedableRng;
 
-use santorini_ai::santorini::{self, Game, Point, Move};
 use santorini_ai::player::mcts_ai;
+use santorini_ai::santorini::{self, Game, Move, Point};
 
 fn default_game() -> Game<Move> {
     let g = santorini::new_game();
@@ -30,19 +30,27 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     let n = mcts_ai::Node::new(g, &mut rng);
-    c.bench_function("one step", |b| b.iter(|| {
-        let mut n2 = n.clone();
-        n2.step(&mut rng);
-        n2
-    }));
+    c.bench_function("one step", |b| {
+        b.iter(|| {
+            let mut n2 = n.clone();
+            let policy: Box<dyn mcts_ai::TreePolicy> = Box::new(mcts_ai::UCB1::default());
+            n2.step(&policy, &mut rng);
+            n2
+        })
+    });
 
     let mut group = c.benchmark_group("large");
     group.sample_size(20);
-    group.bench_function("ten step", |b| b.iter(|| {
-        let mut n2 = n.clone();
-        for _ in 0..10 { n2.step(&mut rng); }
-        n2
-    }));
+    group.bench_function("ten step", |b| {
+        b.iter(|| {
+            let mut n2 = n.clone();
+            let policy: Box<dyn mcts_ai::TreePolicy> = Box::new(mcts_ai::UCB1::default());
+            for _ in 0..10 {
+                n2.step(&policy, &mut rng);
+            }
+            n2
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

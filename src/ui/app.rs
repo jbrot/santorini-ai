@@ -141,7 +141,10 @@ macro_rules! standard_state {
                     self.do_draw(
                         f,
                         active_player.render(&self.game),
-                        Spans::from(vec![self.current_player_name(), Span::raw(concat!(" to ", $title))]),
+                        Spans::from(vec![
+                            self.current_player_name(),
+                            Span::raw(concat!(" to ", $title)),
+                        ]),
                     );
                 })?;
 

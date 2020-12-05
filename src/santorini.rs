@@ -1,8 +1,8 @@
 use derive_more::{Add, Display, From};
 
+use std::iter::Iterator;
 use std::ops::Deref;
 use std::slice::Iter;
-use std::iter::Iterator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Add, Display, From)]
 pub struct Coord(pub i8);
@@ -72,7 +72,10 @@ impl Point {
             None
         } else {
             let offset = BOARD_WIDTH.0 * y.0 + x.0;
-            Some(Point { word: offset / 16, nibble: 4 * (offset % 16), })
+            Some(Point {
+                word: offset / 16,
+                nibble: 4 * (offset % 16),
+            })
         }
     }
 }
@@ -173,7 +176,6 @@ impl PartialOrd for CoordLevel {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Board {
     grid: [u64; 2],
@@ -182,7 +184,7 @@ pub struct Board {
 impl Board {
     fn new() -> Board {
         Board {
-            grid: [0x1111_1111_1111_1111; 2]
+            grid: [0x1111_1111_1111_1111; 2],
         }
     }
 
@@ -485,8 +487,10 @@ impl<'a, S: GameState> Pawn<'a, S> {
             (1, 1),
         ];
 
-        const fn neighbors_table() -> [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] {
-            let mut array = [[(0, [Point{word: 0, nibble: 0}; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize];
+        const fn neighbors_table(
+        ) -> [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] {
+            let mut array = [[(0, [Point { word: 0, nibble: 0 }; 8]); BOARD_HEIGHT.0 as usize];
+                BOARD_WIDTH.0 as usize];
             let mut x = 0;
             while x < BOARD_WIDTH.0 {
                 let mut y = 0;
@@ -499,7 +503,7 @@ impl<'a, S: GameState> Pawn<'a, S> {
                             Some(point) => {
                                 array[x as usize][y as usize].1[count] = point;
                                 count += 1;
-                            },
+                            }
                             None => (),
                         }
                         array[x as usize][y as usize].0 = count;
@@ -512,7 +516,8 @@ impl<'a, S: GameState> Pawn<'a, S> {
             array
         }
 
-        static LOOKUP_TABLE: [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize]; BOARD_WIDTH.0 as usize] = neighbors_table();
+        static LOOKUP_TABLE: [[(usize, [Point; 8]); BOARD_HEIGHT.0 as usize];
+            BOARD_WIDTH.0 as usize] = neighbors_table();
 
         let x: usize = self.pos.x().into();
         let y: usize = self.pos.y().into();
@@ -608,16 +613,19 @@ const OFFSETS: [(i8, i8); 8] = [
 
 const fn neighbors_table() -> [[u64; 61]; 2] {
     let mut array = [[0; 61]; 2];
-    let mut word  = 0;
+    let mut word = 0;
     while word < 2 {
         let mut nibble = 0;
-        while nibble  <  61 {
+        while nibble < 61 {
             if nibble % 4 != 0 {
                 nibble += 1;
                 continue;
             }
 
-            let point = Point { word: word, nibble: nibble };
+            let point = Point {
+                word: word,
+                nibble: nibble,
+            };
             if point.y().0 >= BOARD_HEIGHT.0 {
                 break;
             }
@@ -627,7 +635,7 @@ const fn neighbors_table() -> [[u64; 61]; 2] {
             let mut count = 0;
             while index < 8 {
                 let (dx, dy) = OFFSETS[index];
-                match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
+                match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0 + dy)) {
                     Some(point) => {
                         let off = point.word * 64 + point.nibble;
                         let diff: i8 = off - prev;
@@ -635,7 +643,7 @@ const fn neighbors_table() -> [[u64; 61]; 2] {
                         offset |= diff;
                         prev = off;
                         count += 1;
-                    },
+                    }
                     None => (),
                 }
                 index += 1;
@@ -652,16 +660,19 @@ static ACTION_LOOKUP_TABLE: [[u64; 61]; 2] = neighbors_table();
 
 const fn mask_table() -> [[[[u64; 2]; 3]; 61]; 2] {
     let mut array = [[[[0; 2]; 3]; 61]; 2];
-    let mut word  = 0;
+    let mut word = 0;
     while word < 2 {
         let mut nibble = 0;
-        while nibble  <  61 {
+        while nibble < 61 {
             if nibble % 4 != 0 {
                 nibble += 1;
                 continue;
             }
 
-            let point = Point { word: word, nibble: nibble };
+            let point = Point {
+                word: word,
+                nibble: nibble,
+            };
             if point.y().0 >= BOARD_HEIGHT.0 {
                 break;
             }
@@ -679,10 +690,10 @@ const fn mask_table() -> [[[[u64; 2]; 3]; 61]; 2] {
                 let mut entry = [0; 2];
                 while index < 8 {
                     let (dx, dy) = OFFSETS[index];
-                    match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0+ dy)) {
+                    match Point::new_(Coord(point.x().0 + dx), Coord(point.y().0 + dy)) {
                         Some(point) => {
                             entry[point.word as usize] |= mask << point.nibble;
-                        },
+                        }
                         None => (),
                     }
                     index += 1;
@@ -732,8 +743,11 @@ impl<'a> Pawn<'a, Move> {
     }
 
     pub fn has_actions(&self) -> bool {
-        let mask = MASK_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize][
-            match self.game.board.level_at(self.pos) {
+        let mask = MASK_LOOKUP_TABLE[self.pos.word as usize][self.pos.nibble as usize][match self
+            .game
+            .board
+            .level_at(self.pos)
+        {
             CoordLevel::Ground => 0,
             CoordLevel::One => 1,
             CoordLevel::Two => 2,
@@ -797,7 +811,7 @@ impl<'a> Pawn<'a, Move> {
                     to: self.pos,
                     #[cfg(debug_assertions)]
                     game: *self.game,
-                }
+                },
             };
         }
 
@@ -834,10 +848,13 @@ impl<'a> Pawn<'a, Move> {
             mask,
             action: MoveAction {
                 from: self.pos,
-                to: Point { word: 0, nibble: off as i8 },
+                to: Point {
+                    word: 0,
+                    nibble: off as i8,
+                },
                 #[cfg(debug_assertions)]
                 game: *self.game,
-            }
+            },
         }
     }
 }
@@ -847,7 +864,12 @@ impl<'a> Pawn<'a, Move> {
 impl Game<Move> {
     pub fn apply(self, action: MoveAction) -> ActionResult<Build> {
         #[cfg(debug_assertions)]
-        assert!(action.game == self, "Game {:?} received action {:?} associated with a different game!", self, action);
+        assert!(
+            action.game == self,
+            "Game {:?} received action {:?} associated with a different game!",
+            self,
+            action
+        );
 
         let mut state = Build {
             player1_locs: self.state.player1_locs,
@@ -941,7 +963,7 @@ impl<'a> Pawn<'a, Build> {
             .map(move |loc| BuildAction {
                 loc,
                 #[cfg(debug_assertions)]
-                game
+                game,
             })
     }
 }
@@ -957,7 +979,12 @@ impl Game<Build> {
 
     pub fn apply(self, action: BuildAction) -> ActionResult<Move> {
         #[cfg(debug_assertions)]
-        assert!(action.game == self, "Game {:?} received action {:?} associated with a different game!", self, action);
+        assert!(
+            action.game == self,
+            "Game {:?} received action {:?} associated with a different game!",
+            self,
+            action
+        );
 
         let mut board = self.board;
         board.build(action.loc);
@@ -1027,7 +1054,12 @@ impl Game<PlaceOne> {
     }
 
     pub fn apply(self, placement: PlaceAction<PlaceOne>) -> Game<PlaceTwo> {
-        debug_assert!(placement.game == self, "Game {:?} received action {:?} associated with a different game!", self, placement);
+        debug_assert!(
+            placement.game == self,
+            "Game {:?} received action {:?} associated with a different game!",
+            self,
+            placement
+        );
 
         Game {
             state: PlaceTwo {
@@ -1069,7 +1101,12 @@ impl Game<PlaceTwo> {
     }
 
     pub fn apply(self, placement: PlaceAction<PlaceTwo>) -> Game<Move> {
-        debug_assert!(placement.game == self, "Game {:?} received action {:?} associated with a different game!", self, placement);
+        debug_assert!(
+            placement.game == self,
+            "Game {:?} received action {:?} associated with a different game!",
+            self,
+            placement
+        );
 
         Game {
             state: Move {
@@ -1325,7 +1362,10 @@ mod game_tests {
         assert_eq!(pawn4.actions().collect::<Vec<MoveAction>>(), []);
 
         let g = g.apply(moves1[0]).expect("Invalid victory!");
-        let build = g.active_pawn().can_build(Point::new(0.into(), 0.into())).expect("Invalid build!");
+        let build = g
+            .active_pawn()
+            .can_build(Point::new(0.into(), 0.into()))
+            .expect("Invalid build!");
         let g = g.apply(build).expect("Invalid victory!");
 
         let [pawn1, pawn2] = g.inactive_pawns();

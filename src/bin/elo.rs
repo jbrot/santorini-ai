@@ -1,8 +1,9 @@
 use chrono::Local;
-use std::thread::{self, JoinHandle};
-use santorini_ai::ui::UpdateError;
-use santorini_ai::player::{FullPlayer, StepResult, HeuristicAI, MCTSAI, PUCT, RandomAI};
+use santorini_ai::mcts::tree_policy::PUCT;
+use santorini_ai::player::{FullPlayer, HeuristicAI, MctsSantoriniParams, RandomAI, StepResult};
 use santorini_ai::santorini;
+use santorini_ai::ui::UpdateError;
+use std::thread::{self, JoinHandle};
 
 struct Contestant<'a> {
     name: &'a str,
@@ -24,28 +25,34 @@ impl<'a> Contestant<'a> {
 
 macro_rules! action {
     ($name:ident, $mode:ty) => {
-        fn $name<'a> (mut p1: &'a mut Box<dyn FullPlayer>, mut p2: &'a mut Box<dyn FullPlayer>, game: santorini::Game<$mode>) -> Result<f64, UpdateError> {
+        fn $name<'a>(
+            mut p1: &'a mut Box<dyn FullPlayer>,
+            mut p2: &'a mut Box<dyn FullPlayer>,
+            game: santorini::Game<$mode>,
+        ) -> Result<f64, UpdateError> {
             let p = match game.player() {
                 santorini::Player::PlayerOne => &mut p1,
                 santorini::Player::PlayerTwo => &mut p2,
             };
-        
+
             p.prepare(&game);
-        
+
             loop {
                 match p.step(&game)? {
                     StepResult::NoMove => (),
                     StepResult::PlaceTwo(game) => return place_two(p1, p2, game),
                     StepResult::Move(game) => return mv(p1, p2, game),
                     StepResult::Build(game) => return build(p1, p2, game),
-                    StepResult::Victory(game) => return match game.player() {
-                        santorini::Player::PlayerOne => Ok(1.0),
-                        santorini::Player::PlayerTwo => Ok(0.0),
-                    },
+                    StepResult::Victory(game) => {
+                        return match game.player() {
+                            santorini::Player::PlayerOne => Ok(1.0),
+                            santorini::Player::PlayerTwo => Ok(0.0),
+                        }
+                    }
                 }
             }
         }
-    }
+    };
 }
 
 action!(place_one, santorini::PlaceOne);
@@ -56,18 +63,30 @@ action!(build, santorini::Build);
 fn play(c1: &Contestant, c2: &Contestant) -> JoinHandle<Result<f64, UpdateError>> {
     let mut p1 = (*c1.instantiation)();
     let mut p2 = (*c2.instantiation)();
-    
-    thread::spawn(move || { place_one(&mut p1, &mut p2, santorini::new_game()) })
+
+    thread::spawn(move || place_one(&mut p1, &mut p2, santorini::new_game()))
 }
 
 fn main() -> Result<(), UpdateError> {
     println!("Calculating ELO scores...");
 
-    let mut players = [ 
-        Contestant::new("Random", Box::new(|| { RandomAI::new() })),
-        Contestant::new("Heuristic", Box::new(|| { HeuristicAI::new() })),
-        Contestant::new("MCTS UCT", Box::new(|| { MCTSAI::default() })),
-        Contestant::new("MCTS PUCT", Box::new(|| { MCTSAI::new(PUCT { parameter: f64::sqrt(2.0) }) })),
+    let mut players = [
+        Contestant::new("Random", Box::new(|| RandomAI::new())),
+        Contestant::new("Heuristic", Box::new(|| HeuristicAI::new())),
+        Contestant::new(
+            "MCTS UCT",
+            Box::new(|| MctsSantoriniParams::default().boxed()),
+        ),
+        Contestant::new(
+            "MCTS PUCT",
+            Box::new(|| {
+                MctsSantoriniParams::default()
+                    .tree_policy(PUCT {
+                        parameter: f64::sqrt(2.0),
+                    })
+                    .boxed()
+            }),
+        ),
     ];
 
     let mut k = 100.0;
