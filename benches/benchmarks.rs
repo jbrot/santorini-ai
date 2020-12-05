@@ -3,10 +3,12 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
-use santorini_ai::player::mcts_ai;
-use santorini_ai::santorini::{self, Game, Move, Point};
+use santorini_ai::mcts::santorini::{SantoriniNode, SantoriniSimulation};
+use santorini_ai::mcts::{Node, Simulation};
+use santorini_ai::player::mcts_ai::MctsSantoriniParams;
+use santorini_ai::santorini::{self, Point};
 
-fn default_game() -> Game<Move> {
+fn default_node() -> SantoriniNode {
     let g = santorini::new_game();
     let p1 = Point::new(1.into(), 1.into());
     let p2 = Point::new(2.into(), 1.into());
@@ -16,25 +18,27 @@ fn default_game() -> Game<Move> {
     let action = g.can_place(p1, p2).expect("Invalid placement");
     let g = g.apply(action);
     let action = g.can_place(p3, p4).expect("Invalid placement");
-    g.apply(action)
+    g.apply(action).into()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let g = default_game();
+    let s_node = default_node();
     let mut rng = SmallRng::from_entropy();
 
     {
         let mut group = c.benchmark_group("small");
         group.sample_size(500);
-        group.bench_function("simulate", |b| b.iter(|| mcts_ai::simulate(g, &mut rng)));
+        group.bench_function("simulate", |b| {
+            b.iter(|| SantoriniSimulation {}.simulate(&s_node, &mut rng))
+        });
     }
 
-    let n = mcts_ai::Node::new(g, &mut rng);
+    let mut params = MctsSantoriniParams::default();
+    let node = Node::new(&mut params, s_node);
     c.bench_function("one step", |b| {
         b.iter(|| {
-            let mut n2 = n.clone();
-            let policy: Box<dyn mcts_ai::TreePolicy> = Box::new(mcts_ai::UCB1::default());
-            n2.step(&policy, &mut rng);
+            let mut n2 = node.clone();
+            n2.step(&mut params);
             n2
         })
     });
@@ -43,10 +47,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("ten step", |b| {
         b.iter(|| {
-            let mut n2 = n.clone();
-            let policy: Box<dyn mcts_ai::TreePolicy> = Box::new(mcts_ai::UCB1::default());
+            let mut n2 = node.clone();
             for _ in 0..10 {
-                n2.step(&policy, &mut rng);
+                n2.step(&mut params);
             }
             n2
         })
