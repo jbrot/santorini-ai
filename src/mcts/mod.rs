@@ -46,6 +46,13 @@ impl<T, R: Rng> MctsParams<T, R> {
         }
     }
 
+    pub fn simulation<S: 'static + Simulation<T, R>>(self, simulation: S) -> Self {
+        MctsParams {
+            simulation: Box::new(simulation),
+            ..self
+        }
+    }
+
     pub fn budget(self, budget: u32) -> Self {
         MctsParams { budget, ..self }
     }

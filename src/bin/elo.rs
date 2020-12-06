@@ -1,4 +1,5 @@
 use chrono::Local;
+use santorini_ai::mcts::santorini::ExtendedSantoriniSimulation;
 use santorini_ai::mcts::tree_policy::PUCT;
 use santorini_ai::player::{FullPlayer, HeuristicAI, MctsSantoriniParams, RandomAI, StepResult};
 use santorini_ai::santorini;
@@ -73,17 +74,26 @@ fn main() -> Result<(), UpdateError> {
     let mut players = [
         Contestant::new("Random", Box::new(|| RandomAI::new())),
         Contestant::new("Heuristic", Box::new(|| HeuristicAI::new())),
-        Contestant::new(
-            "MCTS UCT",
-            Box::new(|| MctsSantoriniParams::default().boxed()),
-        ),
+        //Contestant::new(
+        //    "MCTS UCT",
+        //    Box::new(|| MctsSantoriniParams::default().boxed()),
+        //),
         Contestant::new(
             "MCTS PUCT",
             Box::new(|| {
                 MctsSantoriniParams::default()
-                    .tree_policy(PUCT {
-                        parameter: f64::sqrt(2.0),
-                    })
+                    .tree_policy(PUCT { parameter: 0.5 })
+                    .budget(400)
+                    .boxed()
+            }),
+        ),
+        Contestant::new(
+            "MCTS PUCT Extended Simulation",
+            Box::new(|| {
+                MctsSantoriniParams::default()
+                    .simulation(ExtendedSantoriniSimulation {})
+                    .tree_policy(PUCT { parameter: 0.5 })
+                    .budget(200)
                     .boxed()
             }),
         ),
